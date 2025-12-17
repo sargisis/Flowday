@@ -1,1 +1,6 @@
-.env
+env
+flowday/.env
+flowday/flowday.db
+flowday/flowday.postman_collection.json
+flowday/go.mod
+flowday/go.sum
