@@ -1,0 +1,12 @@
+# env
+.env
+
+# database
+*.db
+
+# binaries
+*.exe
+*.out
+
+# os
+.DS_Store
