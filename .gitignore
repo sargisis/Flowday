@@ -1,4 +1,3 @@
-env
 flowday/.env
 flowday/flowday.db
 flowday/flowday.postman_collection.json
