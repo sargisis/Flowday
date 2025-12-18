@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"flowday/internal/dto"
@@ -10,12 +9,19 @@ import (
 	"flowday/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func CreateTask(c *gin.Context) {
 	var req dto.CreateTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	projectID, err := req.GetProjectObjectID()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project_id format"})
 		return
 	}
 
@@ -29,15 +35,17 @@ func CreateTask(c *gin.Context) {
 		dueDate = &today
 	}
 
+	userID, _ := c.Get("user_id")
 	task := models.Task{
-		Title:     req.Title,
-		Priority:  req.Priority,
-		DueDate:   dueDate,
-		ProjectID: req.ProjectID,
-		Status:    "todo",
+		Title:       req.Title,
+		Description: req.Description,
+		Priority:    req.Priority,
+		DueDate:     dueDate,
+		ProjectID:   projectID,
+		Status:      "todo",
 	}
 
-	if err := services.CreateTask(c.GetUint("user_id"), &task); err != nil {
+	if err := services.CreateTask(userID.(primitive.ObjectID), &task); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
@@ -52,23 +60,14 @@ func GetTasks(c *gin.Context) {
 		return
 	}
 
-	projectID, err := strconv.Atoi(projectIDStr)
+	projectID, err := primitive.ObjectIDFromHex(projectIDStr)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "invalid project_id"})
+		c.JSON(400, gin.H{"error": "invalid project_id format"})
 		return
 	}
 
-	var q dto.PaginationQuery
-	_ = c.ShouldBindQuery(&q)
-
-	tasks, err := services.GetTasksByProjectPaginated(
-		c.GetUint("user_id"),
-		uint(projectID),
-		q.Limit,
-		q.Offset,
-		q.Order,
-		q.Dir,
-	)
+	userID, _ := c.Get("user_id")
+	tasks, err := services.GetTasksByProject(userID.(primitive.ObjectID), projectID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -77,11 +76,14 @@ func GetTasks(c *gin.Context) {
 	c.JSON(200, tasks)
 }
 
-
 func UpdateTask(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
-	var req dto.UpdateTaskRequest
+	taskID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format"})
+		return
+	}
 
+	var req dto.UpdateTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -94,11 +96,15 @@ func UpdateTask(c *gin.Context) {
 	if req.Priority != nil {
 		updates["priority"] = *req.Priority
 	}
+	if req.Description != nil {
+		updates["description"] = *req.Description
+	}
 	if req.DueDate != nil {
 		updates["due_date"] = req.DueDate
 	}
 
-	if err := services.UpdateTask(c.GetUint("user_id"), uint(id), updates); err != nil {
+	userID, _ := c.Get("user_id")
+	if err := services.UpdateTask(userID.(primitive.ObjectID), taskID, updates); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
@@ -107,9 +113,14 @@ func UpdateTask(c *gin.Context) {
 }
 
 func DeleteTask(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	taskID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format"})
+		return
+	}
 
-	if err := services.DeleteTask(c.GetUint("user_id"), uint(id)); err != nil {
+	userID, _ := c.Get("user_id")
+	if err := services.DeleteTask(userID.(primitive.ObjectID), taskID); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}

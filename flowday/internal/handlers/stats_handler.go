@@ -6,10 +6,12 @@ import (
 	"flowday/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func GetTaskStats(c *gin.Context) {
-	stats, err := services.GetTaskStats(c.GetUint("user_id"))
+	userID, _ := c.Get("user_id")
+	stats, err := services.GetTaskStats(userID.(primitive.ObjectID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

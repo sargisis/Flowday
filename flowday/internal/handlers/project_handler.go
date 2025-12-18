@@ -2,12 +2,12 @@ package handlers
 
 import (
 	"net/http"
-	"strconv"
 
 	"flowday/internal/dto"
 	"flowday/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func CreateProject(c *gin.Context) {
@@ -17,8 +17,8 @@ func CreateProject(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetUint("user_id")
-	project, err := services.CreateProject(userID, req.Name)
+	userID, _ := c.Get("user_id")
+	project, err := services.CreateProject(userID.(primitive.ObjectID), req.Name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -28,16 +28,20 @@ func CreateProject(c *gin.Context) {
 }
 
 func GetProjects(c *gin.Context) {
-	userID := c.GetUint("user_id")
-	projects, _ := services.GetProjects(userID)
+	userID, _ := c.Get("user_id")
+	projects, _ := services.GetProjects(userID.(primitive.ObjectID))
 	c.JSON(http.StatusOK, projects)
 }
 
 func DeleteProject(c *gin.Context) {
-	userID := c.GetUint("user_id")
-	id, _ := strconv.Atoi(c.Param("id"))
+	userID, _ := c.Get("user_id")
+	projectID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project id format"})
+		return
+	}
 
-	if err := services.DeleteProject(userID, uint(id)); err != nil {
+	if err := services.DeleteProject(userID.(primitive.ObjectID), projectID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}

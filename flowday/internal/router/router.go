@@ -16,6 +16,8 @@ func Setup(r *gin.Engine) {
 	{
 		authGroup.POST("/register", auth.RegisterHandler)
 		authGroup.POST("/login", auth.LoginHandler)
+		authGroup.POST("/forgot-password", auth.ForgotPasswordHandler)
+		authGroup.POST("/reset-password", auth.ResetPasswordHandler)
 	}
 
 	// ---------- PROTECTED ----------
@@ -23,13 +25,12 @@ func Setup(r *gin.Engine) {
 	protected.Use(middleware.AuthMiddleware())
 	{
 		protected.GET("/me", func(c *gin.Context) {
+			userID, _ := c.Get("user_id")
 			c.JSON(200, gin.H{
-				"user_id": c.GetUint("user_id"),
+				"user_id": userID,
 			})
 		})
 	}
-
-
 
 	// ---------- PROJECTS ----------
 	projectsGroup := v1.Group("/projects")
@@ -44,13 +45,13 @@ func Setup(r *gin.Engine) {
 	tasksGroup := v1.Group("/tasks")
 	tasksGroup.Use(middleware.AuthMiddleware())
 	{
-		tasksGroup.GET("", handlers.GetTasks)                 // ?project_id=
+		tasksGroup.GET("", handlers.GetTasks) // ?project_id=
 		tasksGroup.POST("", handlers.CreateTask)
 		tasksGroup.PATCH("/:id", handlers.UpdateTask)
 		tasksGroup.DELETE("/:id", handlers.DeleteTask)
 
 		// ✅ calendar API
-		tasksGroup.GET("/by-date", handlers.GetTasksByDate)   // ?date=YYYY-MM-DD
+		tasksGroup.GET("/by-date", handlers.GetTasksByDate) // ?date=YYYY-MM-DD
 
 		// ✅ range API
 		tasksGroup.GET("/by-range", handlers.GetTasksByRange) // ?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -58,4 +59,17 @@ func Setup(r *gin.Engine) {
 		// ✅ stats API
 		tasksGroup.GET("/stats", handlers.GetTaskStats)
 	}
+
+	// ---------- PROJECT MEMBERS & INVITATIONS ----------
+	invitationsGroup := v1.Group("/invitations")
+	invitationsGroup.Use(middleware.AuthMiddleware())
+	{
+		invitationsGroup.GET("", handlers.GetMyInvitations)
+		invitationsGroup.POST("/:id/accept", handlers.AcceptInvitation)
+		invitationsGroup.POST("/:id/reject", handlers.RejectInvitation)
+	}
+
+	projectsGroup.GET("/:id/members", handlers.GetProjectMembers)
+	projectsGroup.POST("/:id/members", handlers.InviteMember)
+	projectsGroup.DELETE("/:id/members/:userID", handlers.RemoveMember)
 }

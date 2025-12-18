@@ -7,6 +7,7 @@ import (
 	"flowday/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func GetTasksByDate(c *gin.Context) {
@@ -22,7 +23,8 @@ func GetTasksByDate(c *gin.Context) {
 		return
 	}
 
-	tasks, err := services.GetTasksByDate(c.GetUint("user_id"), date)
+	userID, _ := c.Get("user_id")
+	tasks, err := services.GetTasksByDate(userID.(primitive.ObjectID), date)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

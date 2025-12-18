@@ -1,6 +1,7 @@
 package auth
 
 import (
+	appErrors "flowday/internal/errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +21,10 @@ func RegisterHandler(c *gin.Context) {
 
 	user, err := Register(req.Email, req.Password)
 	if err != nil {
+		if err == appErrors.ErrUserExists {
+			c.JSON(http.StatusConflict, gin.H{"error": "User already exists"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -46,4 +51,40 @@ func LoginHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 	})
+}
+
+func ForgotPasswordHandler(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := RequestPasswordReset(req.Email); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "If email exists, code sent"})
+}
+
+func ResetPasswordHandler(c *gin.Context) {
+	var req struct {
+		Email       string `json:"email" binding:"required,email"`
+		Code        string `json:"code" binding:"required,len=6"`
+		NewPassword string `json:"new_password" binding:"required,min=6"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := ResetPassword(req.Email, req.Code, req.NewPassword); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Password updated successfully"})
 }
