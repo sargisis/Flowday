@@ -49,6 +49,7 @@ func Setup(r *gin.Engine) {
 		tasksGroup.POST("", handlers.CreateTask)
 		tasksGroup.PATCH("/:id", handlers.UpdateTask)
 		tasksGroup.DELETE("/:id", handlers.DeleteTask)
+		tasksGroup.GET("/ids/:id", handlers.GetTask)
 
 		// ✅ calendar API
 		tasksGroup.GET("/by-date", handlers.GetTasksByDate) // ?date=YYYY-MM-DD

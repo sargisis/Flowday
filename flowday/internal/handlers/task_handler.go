@@ -127,3 +127,20 @@ func DeleteTask(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+
+func GetTask(c *gin.Context) {
+	taskID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format"})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	task, err := services.GetTask(userID.(primitive.ObjectID), taskID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
+}

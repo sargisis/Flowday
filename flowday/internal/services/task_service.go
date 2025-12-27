@@ -159,3 +159,39 @@ func GetTasksByDateRange(userID primitive.ObjectID, start, end time.Time) ([]mod
 
 	return tasks, nil
 }
+
+func GetTask(userID, taskID primitive.ObjectID) (*models.Task, error) {
+	ctx := context.Background()
+
+	// Get the task
+	var task models.Task
+	err := db.Tasks.FindOne(ctx, bson.M{"_id": taskID}).Decode(&task)
+	if err != nil {
+		return nil, errors.New("task not found")
+	}
+
+	// Verify access (Project Owner OR Member)
+	var project models.Project
+	err = db.Projects.FindOne(ctx, bson.M{"_id": task.ProjectID}).Decode(&project)
+	if err != nil {
+		return nil, errors.New("project not found")
+	}
+
+	if project.UserID == userID {
+		return &task, nil
+	}
+
+	// Check membership if not owner
+	var member models.ProjectMember
+	err = db.ProjectMembers.FindOne(ctx, bson.M{
+		"project_id": task.ProjectID,
+		"user_id":    userID,
+		"status":     "accepted",
+	}).Decode(&member)
+
+	if err == nil {
+		return &task, nil
+	}
+
+	return nil, errors.New("access denied")
+}
