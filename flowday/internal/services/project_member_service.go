@@ -379,3 +379,40 @@ func sendInvitationEmail(to string, projectName string, projectID primitive.Obje
 	auth := smtp.PlainAuth("", from, password, host)
 	return smtp.SendMail(addr, auth, from, []string{to}, msg)
 }
+
+// UpdateMemberRole updates a member's role (only for project owner)
+func UpdateMemberRole(ownerID, projectID, memberUserID primitive.ObjectID, newRole string) error {
+	ctx := context.Background()
+
+	// Verify requester is the owner of the project
+	var project models.Project
+	err := db.Projects.FindOne(ctx, bson.M{
+		"_id":     projectID,
+		"user_id": ownerID,
+	}).Decode(&project)
+	if err != nil {
+		return errors.New("only project owner can update member roles")
+	}
+
+	// Cannot update your own role (you are always owner)
+	if ownerID == memberUserID {
+		return errors.New("cannot change project owner role")
+	}
+
+	// Verify member exists
+	var member models.ProjectMember
+	err = db.ProjectMembers.FindOne(ctx, bson.M{
+		"project_id": projectID,
+		"user_id":    memberUserID,
+	}).Decode(&member)
+	if err != nil {
+		return errors.New("member not found")
+	}
+
+	// Update role
+	_, err = db.ProjectMembers.UpdateOne(ctx,
+		bson.M{"_id": member.ID},
+		bson.M{"$set": bson.M{"role": newRole}},
+	)
+	return err
+}
