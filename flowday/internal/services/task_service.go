@@ -15,21 +15,15 @@ import (
 func CreateTask(userID primitive.ObjectID, task *models.Task) error {
 	ctx := context.Background()
 
-	// Verify project ownership
-	var project models.Project
-	err := db.Projects.FindOne(ctx, bson.M{
-		"_id":     task.ProjectID,
-		"user_id": userID,
-	}).Decode(&project)
-
-	if err != nil {
-		return errors.New("project not found")
+	// Verify access
+	if err := verifyProjectAccess(ctx, userID, task.ProjectID); err != nil {
+		return err
 	}
 
 	task.ID = primitive.NewObjectID()
 	task.CreatedAt = time.Now()
 
-	_, err = db.Tasks.InsertOne(ctx, task)
+	_, err := db.Tasks.InsertOne(ctx, task)
 	return err
 }
 
@@ -84,15 +78,9 @@ func UpdateTask(userID, taskID primitive.ObjectID, updates map[string]interface{
 		return errors.New("task not found")
 	}
 
-	// Verify user owns the project
-	var project models.Project
-	err = db.Projects.FindOne(ctx, bson.M{
-		"_id":     task.ProjectID,
-		"user_id": userID,
-	}).Decode(&project)
-
-	if err != nil {
-		return errors.New("access denied")
+	// Verify access
+	if err := verifyProjectAccess(ctx, userID, task.ProjectID); err != nil {
+		return err
 	}
 
 	// Update task
@@ -114,19 +102,40 @@ func DeleteTask(userID, taskID primitive.ObjectID) error {
 		return errors.New("task not found")
 	}
 
-	// Verify user owns the project
-	var project models.Project
-	err = db.Projects.FindOne(ctx, bson.M{
-		"_id":     task.ProjectID,
-		"user_id": userID,
-	}).Decode(&project)
-
-	if err != nil {
-		return errors.New("access denied")
+	// Verify access
+	if err := verifyProjectAccess(ctx, userID, task.ProjectID); err != nil {
+		return err
 	}
 
 	_, err = db.Tasks.DeleteOne(ctx, bson.M{"_id": taskID})
 	return err
+}
+
+func verifyProjectAccess(ctx context.Context, userID, projectID primitive.ObjectID) error {
+	// Check if owner
+	var project models.Project
+	err := db.Projects.FindOne(ctx, bson.M{"_id": projectID}).Decode(&project)
+	if err != nil {
+		return errors.New("project not found")
+	}
+
+	if project.UserID == userID {
+		return nil
+	}
+
+	// Check if accepted member
+	var member models.ProjectMember
+	err = db.ProjectMembers.FindOne(ctx, bson.M{
+		"project_id": projectID,
+		"user_id":    userID,
+		"status":     "accepted",
+	}).Decode(&member)
+
+	if err == nil {
+		return nil
+	}
+
+	return errors.New("access denied")
 }
 
 func GetTasksByDateRange(userID primitive.ObjectID, start, end time.Time) ([]models.Task, error) {
@@ -158,4 +167,22 @@ func GetTasksByDateRange(userID primitive.ObjectID, start, end time.Time) ([]mod
 	}
 
 	return tasks, nil
+}
+
+func GetTask(userID, taskID primitive.ObjectID) (*models.Task, error) {
+	ctx := context.Background()
+
+	// Get the task
+	var task models.Task
+	err := db.Tasks.FindOne(ctx, bson.M{"_id": taskID}).Decode(&task)
+	if err != nil {
+		return nil, errors.New("task not found")
+	}
+
+	// Verify access (Project Owner OR Member)
+	if err := verifyProjectAccess(ctx, userID, task.ProjectID); err != nil {
+		return nil, err
+	}
+
+	return &task, nil
 }

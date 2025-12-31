@@ -24,12 +24,7 @@ func Setup(r *gin.Engine) {
 	protected := v1.Group("/")
 	protected.Use(middleware.AuthMiddleware())
 	{
-		protected.GET("/me", func(c *gin.Context) {
-			userID, _ := c.Get("user_id")
-			c.JSON(200, gin.H{
-				"user_id": userID,
-			})
-		})
+		protected.GET("/me", auth.GetMeHandler)
 	}
 
 	// ---------- PROJECTS ----------
@@ -49,6 +44,7 @@ func Setup(r *gin.Engine) {
 		tasksGroup.POST("", handlers.CreateTask)
 		tasksGroup.PATCH("/:id", handlers.UpdateTask)
 		tasksGroup.DELETE("/:id", handlers.DeleteTask)
+		tasksGroup.GET("/ids/:id", handlers.GetTask)
 
 		// ✅ calendar API
 		tasksGroup.GET("/by-date", handlers.GetTasksByDate) // ?date=YYYY-MM-DD
@@ -72,4 +68,5 @@ func Setup(r *gin.Engine) {
 	projectsGroup.GET("/:id/members", handlers.GetProjectMembers)
 	projectsGroup.POST("/:id/members", handlers.InviteMember)
 	projectsGroup.DELETE("/:id/members/:userID", handlers.RemoveMember)
+	projectsGroup.PUT("/:id/members/:userID", handlers.UpdateMemberRole)
 }

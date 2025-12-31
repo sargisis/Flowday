@@ -180,3 +180,45 @@ func RemoveMember(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Member removed successfully"})
 }
+
+// UpdateMemberRole handles PUT /projects/:id/members/:userID
+func UpdateMemberRole(c *gin.Context) {
+	ownerID, _ := c.Get("user_id")
+
+	var params struct {
+		ProjectID string `uri:"id" binding:"required"`
+		MemberID  string `uri:"userID" binding:"required"`
+	}
+	if err := c.ShouldBindUri(&params); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ids"})
+		return
+	}
+
+	var req struct {
+		Role string `json:"role" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	pID, err := primitive.ObjectIDFromHex(params.ProjectID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project id format"})
+		return
+	}
+
+	mID, err := primitive.ObjectIDFromHex(params.MemberID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid member user id format"})
+		return
+	}
+
+	err = services.UpdateMemberRole(ownerID.(primitive.ObjectID), pID, mID, req.Role)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Role updated successfully"})
+}
