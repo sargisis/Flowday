@@ -2,15 +2,23 @@ package middleware
 
 import (
 	"net/http"
+	"os"
 	"strings"
 
 	appErrors "flowday/internal/errors"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-var jwtSecret = []byte("super-secret-key") // потом в env
+func getSecret() []byte {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		return []byte("super-secret-key")
+	}
+	return []byte(secret)
+}
 
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -34,7 +42,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		tokenStr := parts[1]
 
 		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
-			return jwtSecret, nil
+			return getSecret(), nil
 		})
 
 		if err != nil || !token.Valid {
@@ -45,7 +53,15 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		claims := token.Claims.(jwt.MapClaims)
-		userID := uint(claims["user_id"].(float64))
+		userIDStr := claims["user_id"].(string)
+
+		userID, err := primitive.ObjectIDFromHex(userIDStr)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "Invalid user ID",
+			})
+			return
+		}
 
 		c.Set("user_id", userID)
 		c.Next()
