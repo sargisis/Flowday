@@ -20,6 +20,7 @@ var (
 	Tasks          *mongo.Collection
 	PasswordResets *mongo.Collection
 	ProjectMembers *mongo.Collection
+	Notifications  *mongo.Collection
 )
 
 func Connect() {
@@ -50,6 +51,7 @@ func Connect() {
 	Tasks = Database.Collection("tasks")
 	PasswordResets = Database.Collection("password_resets")
 	ProjectMembers = Database.Collection("project_members")
+	Notifications = Database.Collection("notifications")
 
 	log.Println("Connected to MongoDB")
 }

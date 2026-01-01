@@ -67,6 +67,14 @@ func Setup(r *gin.Engine) {
 		aiGroup.POST("/health-advice", handlers.GetHealthAdvice)
 	}
 
+	// ---------- NOTIFICATIONS ----------
+	notificationsGroup := v1.Group("/notifications")
+	notificationsGroup.Use(middleware.AuthMiddleware())
+	{
+		notificationsGroup.GET("", handlers.GetNotificationsHandler)
+		notificationsGroup.PATCH("/:id/read", handlers.MarkNotificationReadHandler)
+	}
+
 	// ---------- PROJECT MEMBERS & INVITATIONS ----------
 	invitationsGroup := v1.Group("/invitations")
 	invitationsGroup.Use(middleware.AuthMiddleware())

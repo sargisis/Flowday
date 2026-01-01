@@ -101,13 +101,13 @@ func EnrichTask(c *gin.Context) {
 
 // GetHealthAdvice generates personalized productivity advice based on task stats
 func GetHealthAdvice(c *gin.Context) {
-	var stats map[string]int
-	if err := c.ShouldBindJSON(&stats); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid stats format"})
+	var context services.AnalysisContext
+	if err := c.ShouldBindJSON(&context); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid context format"})
 		return
 	}
 
-	advice, err := services.GetHealthAdvice(c.Request.Context(), stats)
+	advice, err := services.GetHealthAdvice(c.Request.Context(), context)
 	if err != nil {
 		log.Printf("[AI] Health advice error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate intelligent advice"})

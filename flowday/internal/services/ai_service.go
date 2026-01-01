@@ -128,23 +128,43 @@ Output only the list of sub-tasks, one per line, without numbers, bullets, or sy
 	return subtasks, nil
 }
 
-func GetHealthAdvice(ctx context.Context, stats map[string]int) (string, error) {
+// AnalysisContext holds the rich data needed for deep AI analysis
+type AnalysisContext struct {
+	Stats        map[string]int `json:"stats"`
+	StaleTasks   []string       `json:"stale_tasks"`   // Tasks in progress > 3 days
+	BlockedTasks []string       `json:"blocked_tasks"` // Titles of blocked tasks
+	Velocity     int            `json:"velocity"`      // Tasks completed in last 7 days
+	OverdueCount int            `json:"overdue_count"`
+}
+
+func GetHealthAdvice(ctx context.Context, context AnalysisContext) (string, error) {
 	if groqClient == nil {
 		return "", fmt.Errorf("AI Service not initialized or API configuration missing")
 	}
 
 	prompt := fmt.Sprintf(`
-You are a productivity expert coach. Analyze the following user task statistics and provide one short, powerful, and highly actionable piece of advice (max 20 words).
-Stats:
-- Todo: %d
-- In Progress: %d
-- Blocked: %d
-- Done: %d
-- High Priority: %d
+You are a senior technical project manager. Analyze the following project state and identify the SINGLE biggest risk or opportunity.
+Data:
+- Task Counts: Todo: %d, In Progress: %d, Blocked: %d, Done: %d
+- Stale Tasks (In Progress > 3 days): %v
+- Blocked Tasks: %v
+- Overdue Tasks: %d
+- Weekly Velocity: %d tasks/week
 
-Focus on the most critical bottleneck. If there are many Todo/High Priority, suggest focusing on one. If many are Blocked, suggest unblocking. If nothing is In Progress, suggest starting.
-Output only the advice string without any intros.
-`, stats["todo"], stats["in_progress"], stats["blocked"], stats["done"], stats["high_priority"])
+Heuristics:
+1. If there are STALE tasks, they are the biggest risk. Advice: "You've been stuck on '[Task Name]' for a while. Break it down or ask for help."
+2. If BLOCKED tasks exist, they kill flow. Advice: "Unblock '[Task Name]' immediately to restore momentum."
+3. If In Progress > 3 and no stale tasks, warn about context switching.
+4. If Velocity is high (>5) and no issues, praise the momentum.
+
+Output ONE concise, punchy sentence (max 25 words). No intros.
+`,
+		context.Stats["todo"], context.Stats["in_progress"], context.Stats["blocked"], context.Stats["done"],
+		context.StaleTasks,
+		context.BlockedTasks,
+		context.OverdueCount,
+		context.Velocity,
+	)
 
 	resp, err := groqClient.CreateChatCompletion(
 		ctx,
