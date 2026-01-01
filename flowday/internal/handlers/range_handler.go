@@ -1,13 +1,13 @@
 package handlers
 
-
 import (
+	"flowday/internal/services"
 	"net/http"
 	"time"
-	"flowday/internal/services"
-	"github.com/gin-gonic/gin"
-)
 
+	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
 
 func GetTasksByRange(c *gin.Context) {
 	fromStr := c.Query("from")
@@ -30,7 +30,8 @@ func GetTasksByRange(c *gin.Context) {
 		return
 	}
 
-	tasks, err := services.GetTaskByRange(c.GetUint("user_id"), from, to)
+	userID, _ := c.Get("user_id")
+	tasks, err := services.GetTaskByRange(userID.(primitive.ObjectID), from, to)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
