@@ -11,6 +11,8 @@ type User struct {
 	Name      string             `bson:"name" json:"name"`
 	Email     string             `bson:"email" json:"email"`
 	Password  string             `bson:"password" json:"-"`
+	Bio       string             `bson:"bio" json:"bio"`
+	AvatarURL string             `bson:"avatar_url" json:"avatar_url"`
 	XP        int                `bson:"xp" json:"xp"`
 	Level     int                `bson:"level" json:"level"`
 	CreatedAt time.Time          `bson:"created_at" json:"created_at"`

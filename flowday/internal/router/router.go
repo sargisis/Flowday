@@ -25,7 +25,14 @@ func Setup(r *gin.Engine) {
 	protected.Use(middleware.AuthMiddleware())
 	{
 		protected.GET("/me", auth.GetMeHandler)
+		protected.PATCH("/users/profile", handlers.UpdateProfile)
+		protected.POST("/users/avatar", handlers.UploadAvatar)
+		protected.POST("/users/email-change/request", handlers.RequestEmailChange)
+		protected.POST("/users/email-change/confirm", handlers.ConfirmEmailChange)
 	}
+
+	// Serve static files for uploads
+	r.Static("/api/v1/uploads", "./uploads")
 
 	// ---------- PROJECTS ----------
 	projectsGroup := v1.Group("/projects")
