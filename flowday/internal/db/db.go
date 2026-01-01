@@ -15,12 +15,13 @@ var (
 	Database *mongo.Database
 
 	// Collections
-	Users          *mongo.Collection
-	Projects       *mongo.Collection
-	Tasks          *mongo.Collection
-	PasswordResets *mongo.Collection
-	ProjectMembers *mongo.Collection
-	Notifications  *mongo.Collection
+	Users               *mongo.Collection
+	Projects            *mongo.Collection
+	Tasks               *mongo.Collection
+	PasswordResets      *mongo.Collection
+	ProjectMembers      *mongo.Collection
+	Notifications       *mongo.Collection
+	EmailChangeRequests *mongo.Collection
 )
 
 func Connect() {
@@ -52,6 +53,7 @@ func Connect() {
 	PasswordResets = Database.Collection("password_resets")
 	ProjectMembers = Database.Collection("project_members")
 	Notifications = Database.Collection("notifications")
+	EmailChangeRequests = Database.Collection("email_change_requests")
 
 	log.Println("Connected to MongoDB")
 }
