@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -121,9 +122,31 @@ func DeleteTask(c *gin.Context) {
 
 	userID, _ := c.Get("user_id")
 	if err := services.DeleteTask(userID.(primitive.ObjectID), taskID); err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		log.Printf("[DeleteTask] Error: %v", err)
+		if err.Error() == "task not found" || err.Error() == "project not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		}
 		return
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+func GetTask(c *gin.Context) {
+	taskID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format"})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	task, err := services.GetTask(userID.(primitive.ObjectID), taskID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
 }

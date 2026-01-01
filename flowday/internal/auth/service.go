@@ -20,7 +20,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func Register(email, password string) (*models.User, error) {
+func Register(name, email, password string) (*models.User, error) {
 	hashed, err := HashPassword(password)
 	if err != nil {
 		return nil, err
@@ -39,8 +39,11 @@ func Register(email, password string) (*models.User, error) {
 
 	user := models.User{
 		ID:        primitive.NewObjectID(),
+		Name:      name,
 		Email:     email,
 		Password:  hashed,
+		XP:        0,
+		Level:     1,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -168,4 +171,20 @@ func sendEmail(to string, code string) error {
 
 	auth := smtp.PlainAuth("", from, password, host)
 	return smtp.SendMail(addr, auth, from, []string{to}, msg)
+}
+
+func GetUserByID(idStr string) (*models.User, error) {
+	ctx := context.Background()
+	objID, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		return nil, err
+	}
+
+	var user models.User
+	err = db.Users.FindOne(ctx, bson.M{"_id": objID}).Decode(&user)
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
 }
