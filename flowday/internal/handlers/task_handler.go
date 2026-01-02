@@ -150,3 +150,14 @@ func GetTask(c *gin.Context) {
 
 	c.JSON(http.StatusOK, task)
 }
+
+func GetAllTasks(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	tasks, err := services.GetAllTasks(userID.(primitive.ObjectID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, tasks)
+}

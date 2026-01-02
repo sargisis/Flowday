@@ -49,6 +49,7 @@ func Setup(r *gin.Engine) {
 	tasksGroup.Use(middleware.AuthMiddleware())
 	{
 		tasksGroup.GET("", handlers.GetTasks) // ?project_id=
+		tasksGroup.GET("/all", handlers.GetAllTasks)
 		tasksGroup.POST("", handlers.CreateTask)
 		tasksGroup.PATCH("/:id", handlers.UpdateTask)
 		tasksGroup.DELETE("/:id", handlers.DeleteTask)
