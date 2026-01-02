@@ -116,6 +116,12 @@ func UpdateTask(c *gin.Context) {
 		task, _ := services.GetTask(userID.(primitive.ObjectID), taskID)
 		if task != nil {
 			services.LogActivity(userID.(primitive.ObjectID), models.ActivityTaskCompleted, "Completed task: "+task.Title, map[string]string{"task_id": task.ID.Hex()})
+
+			// Trigger achievement check
+			go services.CheckAndAwardAchievements(userID.(primitive.ObjectID), "task_completed", map[string]interface{}{
+				"task_id":      task.ID.Hex(),
+				"completed_at": time.Now(),
+			})
 		}
 	}
 

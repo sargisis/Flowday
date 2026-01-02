@@ -43,6 +43,13 @@ func CreateFocusSession(c *gin.Context) {
 		"task_id":  req.TaskID,
 	})
 
+	// Trigger achievement check
+	go services.CheckAndAwardAchievements(userID, "focus_completed", map[string]interface{}{
+		"duration":     req.Duration,
+		"task_title":   req.TaskTitle,
+		"completed_at": c.GetHeader("X-Request-Time"), // or time.Now()
+	})
+
 	c.JSON(http.StatusOK, gin.H{"message": "Focus session saved successfully"})
 }
 

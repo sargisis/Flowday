@@ -99,6 +99,19 @@ func Setup(r *gin.Engine) {
 		activityGroup.GET("", handlers.GetActivityFeed)
 	}
 
+	// ---------- ACHIEVEMENTS & STREAKS ----------
+	achievementGroup := v1.Group("/achievements")
+	achievementGroup.Use(middleware.AuthMiddleware())
+	{
+		achievementGroup.GET("", handlers.GetAchievements)
+	}
+
+	streakGroup := v1.Group("/streak")
+	streakGroup.Use(middleware.AuthMiddleware())
+	{
+		streakGroup.GET("", handlers.GetStreak)
+	}
+
 	// ---------- PROJECT MEMBERS & INVITATIONS ----------
 	invitationsGroup := v1.Group("/invitations")
 	invitationsGroup.Use(middleware.AuthMiddleware())
