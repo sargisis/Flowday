@@ -7,14 +7,17 @@ import (
 )
 
 type User struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Name      string             `bson:"name" json:"name"`
-	Email     string             `bson:"email" json:"email"`
-	Password  string             `bson:"password" json:"-"`
-	Bio       string             `bson:"bio" json:"bio"`
-	AvatarURL string             `bson:"avatar_url" json:"avatar_url"`
-	XP        int                `bson:"xp" json:"xp"`
-	Level     int                `bson:"level" json:"level"`
-	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
-	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
+	ID            primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Name          string             `bson:"name" json:"name"`
+	Email         string             `bson:"email" json:"email"`
+	Password      string             `bson:"password" json:"-"`
+	Bio           string             `bson:"bio" json:"bio"`
+	AvatarURL     string             `bson:"avatar_url" json:"avatar_url"`
+	WorkspaceName string             `bson:"workspace_name" json:"workspace_name"`
+	Status        string             `bson:"status" json:"status"`
+	Velocity      int                `bson:"velocity" json:"velocity"`
+	XP            int                `bson:"xp" json:"xp"`
+	Level         int                `bson:"level" json:"level"`
+	CreatedAt     time.Time          `bson:"created_at" json:"created_at"`
+	UpdatedAt     time.Time          `bson:"updated_at" json:"updated_at"`
 }
