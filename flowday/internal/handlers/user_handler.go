@@ -21,8 +21,9 @@ import (
 )
 
 type UpdateProfileRequest struct {
-	Name string `json:"name"`
-	Bio  string `json:"bio"`
+	Name          string `json:"name"`
+	Bio           string `json:"bio"`
+	WorkspaceName string `json:"workspace_name"`
 }
 
 func UpdateProfile(c *gin.Context) {
@@ -49,6 +50,7 @@ func UpdateProfile(c *gin.Context) {
 		update["$set"].(bson.M)["name"] = req.Name
 	}
 	update["$set"].(bson.M)["bio"] = req.Bio
+	update["$set"].(bson.M)["workspace_name"] = req.WorkspaceName
 
 	_, err := db.Users.UpdateOne(context.Background(), bson.M{"_id": userID}, update)
 	if err != nil {
@@ -227,4 +229,36 @@ func ConfirmEmailChange(c *gin.Context) {
 	db.EmailChangeRequests.DeleteOne(context.Background(), bson.M{"_id": changeReq.ID})
 
 	c.JSON(http.StatusOK, gin.H{"message": "Email updated successfully"})
+}
+
+type UpdateStatusRequest struct {
+	Status string `json:"status"`
+}
+
+func UpdateStatus(c *gin.Context) {
+	val, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	userID := val.(primitive.ObjectID)
+
+	var req UpdateStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	_, err := db.Users.UpdateOne(context.Background(), bson.M{"_id": userID}, bson.M{
+		"$set": bson.M{
+			"status":     req.Status,
+			"updated_at": time.Now(),
+		},
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update status"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Status updated successfully"})
 }

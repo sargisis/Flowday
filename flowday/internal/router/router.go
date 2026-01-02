@@ -28,7 +28,8 @@ func Setup(r *gin.Engine) {
 		protected.PATCH("/users/profile", handlers.UpdateProfile)
 		protected.POST("/users/avatar", handlers.UploadAvatar)
 		protected.POST("/users/email-change/request", handlers.RequestEmailChange)
-		protected.POST("/users/email-change/confirm", handlers.ConfirmEmailChange)
+		protected.POST("/users/change-email/verify", handlers.ConfirmEmailChange)
+		protected.PATCH("/users/status", handlers.UpdateStatus)
 	}
 
 	// Serve static files for uploads

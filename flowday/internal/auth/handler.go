@@ -116,10 +116,15 @@ func GetMeHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":    user.ID,
-		"name":  user.Name,
-		"email": user.Email,
-		"xp":    user.XP,
-		"level": user.Level,
+		"id":             user.ID,
+		"name":           user.Name,
+		"email":          user.Email,
+		"bio":            user.Bio,
+		"avatar_url":     user.AvatarURL,
+		"workspace_name": user.WorkspaceName,
+		"status":         user.Status,
+		"velocity":       user.Velocity,
+		"xp":             user.XP,
+		"level":          user.Level,
 	})
 }
