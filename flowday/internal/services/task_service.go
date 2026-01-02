@@ -236,3 +236,33 @@ func GetTask(userID, taskID primitive.ObjectID) (*models.Task, error) {
 
 	return &task, nil
 }
+
+func GetAllTasks(userID primitive.ObjectID) ([]models.Task, error) {
+	ctx := context.Background()
+
+	// Get user's projects (User owns these OR is a member)
+	projects, err := GetProjects(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	projectIDs := make([]primitive.ObjectID, len(projects))
+	for i, p := range projects {
+		projectIDs[i] = p.ID
+	}
+
+	cursor, err := db.Tasks.Find(ctx, bson.M{
+		"project_id": bson.M{"$in": projectIDs},
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var tasks []models.Task
+	if err = cursor.All(ctx, &tasks); err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
+}
