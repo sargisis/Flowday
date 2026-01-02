@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"flowday/internal/dto"
+	"flowday/internal/models"
 	"flowday/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -23,6 +24,8 @@ func CreateProject(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	services.LogActivity(userID.(primitive.ObjectID), models.ActivityProjectCreated, "Created new project: "+project.Name, map[string]string{"project_id": project.ID.Hex()})
 
 	c.JSON(http.StatusCreated, project)
 }
