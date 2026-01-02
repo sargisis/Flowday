@@ -84,6 +84,21 @@ func Setup(r *gin.Engine) {
 		notificationsGroup.PATCH("/:id/read", handlers.MarkNotificationReadHandler)
 	}
 
+	// ---------- FOCUS SESSIONS ----------
+	focusGroup := v1.Group("/focus")
+	focusGroup.Use(middleware.AuthMiddleware())
+	{
+		focusGroup.POST("/sessions", handlers.CreateFocusSession)
+		focusGroup.GET("/sessions", handlers.GetFocusSessions)
+	}
+
+	// ---------- ACTIVITY FEED ----------
+	activityGroup := v1.Group("/activity")
+	activityGroup.Use(middleware.AuthMiddleware())
+	{
+		activityGroup.GET("", handlers.GetActivityFeed)
+	}
+
 	// ---------- PROJECT MEMBERS & INVITATIONS ----------
 	invitationsGroup := v1.Group("/invitations")
 	invitationsGroup.Use(middleware.AuthMiddleware())

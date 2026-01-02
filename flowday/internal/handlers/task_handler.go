@@ -51,6 +51,8 @@ func CreateTask(c *gin.Context) {
 		return
 	}
 
+	services.LogActivity(userID.(primitive.ObjectID), models.ActivityTaskCreated, "Created task: "+task.Title, map[string]string{"task_id": task.ID.Hex()})
+
 	c.JSON(http.StatusCreated, task)
 }
 
@@ -108,6 +110,13 @@ func UpdateTask(c *gin.Context) {
 	if err := services.UpdateTask(userID.(primitive.ObjectID), taskID, updates); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
+	}
+
+	if req.Status != nil && *req.Status == "done" {
+		task, _ := services.GetTask(userID.(primitive.ObjectID), taskID)
+		if task != nil {
+			services.LogActivity(userID.(primitive.ObjectID), models.ActivityTaskCompleted, "Completed task: "+task.Title, map[string]string{"task_id": task.ID.Hex()})
+		}
 	}
 
 	c.Status(http.StatusNoContent)

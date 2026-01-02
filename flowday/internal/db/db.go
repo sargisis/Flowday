@@ -22,6 +22,8 @@ var (
 	ProjectMembers      *mongo.Collection
 	Notifications       *mongo.Collection
 	EmailChangeRequests *mongo.Collection
+	FocusSessions       *mongo.Collection
+	Activities          *mongo.Collection
 )
 
 func Connect() {
@@ -54,6 +56,8 @@ func Connect() {
 	ProjectMembers = Database.Collection("project_members")
 	Notifications = Database.Collection("notifications")
 	EmailChangeRequests = Database.Collection("email_change_requests")
+	FocusSessions = Database.Collection("focus_sessions")
+	Activities = Database.Collection("activities")
 
 	log.Println("Connected to MongoDB")
 }
