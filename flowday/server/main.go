@@ -19,6 +19,12 @@ func main() {
 	}
 
 	db.Connect()
+
+	// Initialize achievements
+	if err := services.InitializeAchievements(); err != nil {
+		log.Printf("Failed to initialize achievements: %v", err)
+	}
+
 	if err := services.InitAIService(); err != nil {
 		log.Printf("Failed to initialize AI Service: %v", err)
 	}
