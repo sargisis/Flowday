@@ -118,3 +118,76 @@ func GetHealthAdvice(c *gin.Context) {
 		"advice": advice,
 	})
 }
+
+// HandleChat processes a user message and returns the AI response
+func HandleChat(c *gin.Context) {
+	var body struct {
+		Message string `json:"message" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "message is required"})
+		return
+	}
+
+	userID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	reply, err := services.Chat(c.Request.Context(), userID.(primitive.ObjectID), body.Message)
+	if err != nil {
+		if err.Error() == "quota_exceeded" {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "Daily free quota exceeded. Upgrade to Pro."})
+			return
+		}
+		log.Printf("[AI] Chat error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process message"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"reply": reply,
+	})
+}
+
+// HandleGetHistory returns the chat history for the user
+func HandleGetHistory(c *gin.Context) {
+	userID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	history, err := services.GetHistory(c.Request.Context(), userID.(primitive.ObjectID))
+	if err != nil {
+		log.Printf("[AI] History error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch history"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"history": history,
+	})
+}
+
+// HandleGetQuota returns the current quota usage
+func HandleGetQuota(c *gin.Context) {
+	userID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	allowed, remaining, err := services.CheckQuota(c.Request.Context(), userID.(primitive.ObjectID))
+	if err != nil {
+		log.Printf("[AI] Quota check error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check quota"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"allowed":   allowed,
+		"remaining": remaining, // -1 means unlimited
+	})
+}
