@@ -77,6 +77,7 @@ func Setup(r *gin.Engine) {
 		aiGroup.POST("/chat", handlers.HandleChat)
 		aiGroup.GET("/history", handlers.HandleGetHistory)
 		aiGroup.GET("/quota", handlers.HandleGetQuota)
+		aiGroup.GET("/insights", handlers.HandleGetInsights)
 	}
 
 	// ---------- NOTIFICATIONS ----------

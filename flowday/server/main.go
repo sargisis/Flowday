@@ -7,6 +7,7 @@ import (
 	"flowday/internal/db"
 	"flowday/internal/router"
 	"flowday/internal/services"
+	"flowday/internal/worker"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -28,6 +29,9 @@ func main() {
 	if err := services.InitAIService(); err != nil {
 		log.Printf("Failed to initialize AI Service: %v", err)
 	}
+
+	// Start Background Workers
+	worker.StartAnalyzer()
 
 	r := gin.Default()
 

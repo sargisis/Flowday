@@ -4,11 +4,14 @@ import (
 	"log"
 	"net/http"
 
+	"flowday/internal/db"
 	"flowday/internal/models"
 	"flowday/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // DecomposeTask breaks a task into multiple new task cards
@@ -189,5 +192,32 @@ func HandleGetQuota(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"allowed":   allowed,
 		"remaining": remaining, // -1 means unlimited
+	})
+}
+
+// HandleGetInsights returns AI-generated insights
+func HandleGetInsights(c *gin.Context) {
+	userID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	opts := options.Find().SetSort(bson.M{"created_at": -1}).SetLimit(10)
+	cursor, err := db.Database.Collection("ai_insights").Find(c.Request.Context(), bson.M{"user_id": userID.(primitive.ObjectID)}, opts)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch insights"})
+		return
+	}
+	defer cursor.Close(c.Request.Context())
+
+	var insights []models.Insight
+	if err = cursor.All(c.Request.Context(), &insights); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode insights"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"insights": insights,
 	})
 }

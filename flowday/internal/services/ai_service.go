@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -236,7 +237,7 @@ func CheckQuota(ctx context.Context, userID primitive.ObjectID) (bool, int, erro
 	return true, FreeQuotaLimit - user.AIQuotaUsed, nil
 }
 
-func IncrementQuota(ctx context.Context, userID primitive.ObjectID) error {
+func IncrementQuota(ctx context.Context, userID primitive.ObjectID, amount int) error {
 	var user models.User
 	err := db.Users.FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
 	if err != nil {
@@ -248,7 +249,7 @@ func IncrementQuota(ctx context.Context, userID primitive.ObjectID) error {
 	}
 
 	_, err = db.Users.UpdateOne(ctx, bson.M{"_id": userID}, bson.M{
-		"$inc": bson.M{"ai_quota_used": 1},
+		"$inc": bson.M{"ai_quota_used": amount},
 	})
 	return err
 }
@@ -293,7 +294,7 @@ func Chat(ctx context.Context, userID primitive.ObjectID, message string) (strin
 	aiMessages := []openai.ChatCompletionMessage{
 		{
 			Role:    openai.ChatMessageRoleSystem,
-			Content: "You are FlowBot, a productivity assistant in the Flowday app. Be concise, helpful, and focusing on helping the user stay in flow. You can manage tasks (conceptually) and give advice.",
+			Content: "You are FlowBot. If user asks to create/plan tasks, output strictly a JSON array of objects with keys: 'title', 'priority' ('high', 'medium', 'low'). Wrap JSON in ```json code block. Do not output anything else if creating tasks.",
 		},
 	}
 
@@ -331,6 +332,60 @@ func Chat(ctx context.Context, userID primitive.ObjectID, message string) (strin
 	}
 
 	assistantReply := resp.Choices[0].Message.Content
+	cost := 1
+
+	// Check for Smart Task Creation JSON
+	// Expected format: ```json\n[{"title": "...", "priority": "high", ...}]\n```
+	if strings.Contains(assistantReply, "```json") && strings.Contains(assistantReply, "priority") {
+		// Extract JSON
+		start := strings.Index(assistantReply, "```json") + 7
+		end := strings.LastIndex(assistantReply, "```")
+		if end > start {
+			jsonStr := assistantReply[start:end]
+			var tasks []models.Task
+			if err := json.Unmarshal([]byte(jsonStr), &tasks); err == nil && len(tasks) > 0 {
+				// We have valid tasks!
+
+				// Re-check quota for higher cost
+				if allowed, rem, _ := CheckQuota(ctx, userID); !allowed || (rem != -1 && rem < 3) {
+					return "I'd love to organize that for you, but Smart Plan requires 3 credits. You're running low!", nil
+				}
+
+				createdCount := 0
+				for _, t := range tasks {
+					t.ProjectID = primitive.NilObjectID // Will be set below
+
+					// Let's quickly fetch a project
+					projects, _ := GetProjects(userID)
+					if len(projects) > 0 {
+						t.ProjectID = projects[0].ID
+					} else {
+						// Cannot create task without project
+						continue
+					}
+
+					// Set defaults
+					t.Status = "todo"
+					if t.Priority == "" {
+						t.Priority = "medium"
+					}
+
+					// Assuming CreateTask handles the rest (validation etc)
+					if err := CreateTask(userID, &t); err == nil {
+						createdCount++
+					}
+				}
+
+				if createdCount > 0 {
+					cost = 3
+					assistantReply = fmt.Sprintf("✨ done! I've created %d prioritized tasks for you:\n\n", createdCount)
+					for _, t := range tasks {
+						assistantReply += fmt.Sprintf("- **%s** (%s)\n", t.Title, t.Priority)
+					}
+				}
+			}
+		}
+	}
 
 	// 5. Update Conversation History
 	newMessages := []models.Message{
@@ -353,7 +408,7 @@ func Chat(ctx context.Context, userID primitive.ObjectID, message string) (strin
 
 	// 6. Increment Quota
 	if remaining != -1 { // -1 means pro/unlimited
-		_ = IncrementQuota(ctx, userID)
+		_ = IncrementQuota(ctx, userID, cost)
 	}
 
 	return assistantReply, nil
