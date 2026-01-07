@@ -18,6 +18,12 @@ type User struct {
 	Velocity      int                `bson:"velocity" json:"velocity"`
 	XP            int                `bson:"xp" json:"xp"`
 	Level         int                `bson:"level" json:"level"`
-	CreatedAt     time.Time          `bson:"created_at" json:"created_at"`
-	UpdatedAt     time.Time          `bson:"updated_at" json:"updated_at"`
+
+	// AI Quota & Plan
+	AIQuotaUsed    int       `bson:"ai_quota_used" json:"ai_quota_used"`
+	LastQuotaReset time.Time `bson:"last_quota_reset" json:"last_quota_reset"`
+	Plan           string    `bson:"plan" json:"plan"` // "free", "pro"
+
+	CreatedAt time.Time `bson:"created_at" json:"created_at"`
+	UpdatedAt time.Time `bson:"updated_at" json:"updated_at"`
 }

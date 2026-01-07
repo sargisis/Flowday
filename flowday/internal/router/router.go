@@ -74,6 +74,9 @@ func Setup(r *gin.Engine) {
 	aiGroup.Use(middleware.AuthMiddleware())
 	{
 		aiGroup.POST("/health-advice", handlers.GetHealthAdvice)
+		aiGroup.POST("/chat", handlers.HandleChat)
+		aiGroup.GET("/history", handlers.HandleGetHistory)
+		aiGroup.GET("/quota", handlers.HandleGetQuota)
 	}
 
 	// ---------- NOTIFICATIONS ----------
