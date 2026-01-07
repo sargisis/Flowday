@@ -23,7 +23,9 @@ func CreateTask(userID primitive.ObjectID, task *models.Task) error {
 	}
 
 	task.ID = primitive.NewObjectID()
+	task.ID = primitive.NewObjectID()
 	task.CreatedAt = time.Now()
+	task.UpdatedAt = time.Now()
 
 	_, err := db.Tasks.InsertOne(ctx, task)
 	return err
@@ -86,6 +88,7 @@ func UpdateTask(userID, taskID primitive.ObjectID, updates map[string]interface{
 	}
 
 	// Update task
+	updates["updated_at"] = time.Now()
 	updateResult, err := db.Tasks.UpdateOne(ctx,
 		bson.M{"_id": taskID},
 		bson.M{"$set": updates},
@@ -265,4 +268,9 @@ func GetAllTasks(userID primitive.ObjectID) ([]models.Task, error) {
 	}
 
 	return tasks, nil
+}
+
+// GetUserTasks is an alias for GetAllTasks, used by the background worker
+func GetUserTasks(userID primitive.ObjectID) ([]models.Task, error) {
+	return GetAllTasks(userID)
 }
