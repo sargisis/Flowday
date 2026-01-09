@@ -147,6 +147,12 @@ func UpdateStreak(userID primitive.ObjectID) error {
 		bson.M{"$set": streak},
 	)
 
+	if err == nil {
+		log.Printf("[Streak] Updated for user %s: current=%d, lastActive=%v", userID.Hex(), streak.CurrentStreak, today)
+	} else {
+		log.Printf("[Streak] Error updating for user %s: %v", userID.Hex(), err)
+	}
+
 	// Check for streak achievements
 	go CheckAndAwardAchievements(userID, "streak_updated", map[string]interface{}{
 		"current_streak": streak.CurrentStreak,

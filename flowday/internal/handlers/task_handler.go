@@ -3,6 +3,7 @@ package handlers
 import (
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"flowday/internal/dto"
@@ -112,12 +113,17 @@ func UpdateTask(c *gin.Context) {
 		return
 	}
 
-	if req.Status != nil && *req.Status == "done" {
+	// Trigger achievement/streak check on any update (activity)
+	go services.CheckAndAwardAchievements(userID.(primitive.ObjectID), "task_updated", map[string]interface{}{
+		"updated_at": time.Now(),
+	})
+
+	if req.Status != nil && (strings.ToLower(*req.Status) == "done") {
 		task, _ := services.GetTask(userID.(primitive.ObjectID), taskID)
 		if task != nil {
 			services.LogActivity(userID.(primitive.ObjectID), models.ActivityTaskCompleted, "Completed task: "+task.Title, map[string]string{"task_id": task.ID.Hex()})
 
-			// Trigger achievement check
+			// Trigger specific achievement check for completion
 			go services.CheckAndAwardAchievements(userID.(primitive.ObjectID), "task_completed", map[string]interface{}{
 				"task_id":      task.ID.Hex(),
 				"completed_at": time.Now(),
