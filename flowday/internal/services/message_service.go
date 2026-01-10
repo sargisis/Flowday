@@ -11,16 +11,18 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func SendMessage(senderID, receiverID primitive.ObjectID, content string) (*models.ChatMessage, error) {
+func SendMessage(senderID, receiverID primitive.ObjectID, content string, attachmentURL, attachmentType string) (*models.ChatMessage, error) {
 	ctx := context.Background()
 
 	msg := &models.ChatMessage{
-		ID:         primitive.NewObjectID(),
-		SenderID:   senderID,
-		ReceiverID: receiverID,
-		Content:    content,
-		CreatedAt:  time.Now(),
-		IsRead:     false,
+		ID:             primitive.NewObjectID(),
+		SenderID:       senderID,
+		ReceiverID:     receiverID,
+		Content:        content,
+		AttachmentURL:  attachmentURL,
+		AttachmentType: attachmentType,
+		CreatedAt:      time.Now(),
+		IsRead:         false,
 	}
 
 	_, err := db.Messages.InsertOne(ctx, msg)

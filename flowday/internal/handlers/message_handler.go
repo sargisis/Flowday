@@ -3,7 +3,11 @@ package handlers
 import (
 	"flowday/internal/dto"
 	"flowday/internal/services"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -16,6 +20,11 @@ func SendMessage(c *gin.Context) {
 		return
 	}
 
+	if req.Content == "" && req.AttachmentURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "message content or attachment is required"})
+		return
+	}
+
 	senderID, _ := c.Get("user_id")
 	receiverID, err := primitive.ObjectIDFromHex(req.ReceiverID)
 	if err != nil {
@@ -23,13 +32,51 @@ func SendMessage(c *gin.Context) {
 		return
 	}
 
-	msg, err := services.SendMessage(senderID.(primitive.ObjectID), receiverID, req.Content)
+	msg, err := services.SendMessage(senderID.(primitive.ObjectID), receiverID, req.Content, req.AttachmentURL, req.AttachmentType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusCreated, msg)
+}
+
+func UploadAttachment(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
+		return
+	}
+
+	// Create uploads/messages directory if not exists
+	uploadDir := filepath.Join("uploads", "messages")
+	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+		os.MkdirAll(uploadDir, 0755)
+	}
+
+	// Generate unique filename
+	ext := filepath.Ext(file.Filename)
+	filename := fmt.Sprintf("msg_%d%s", time.Now().UnixNano(), ext)
+	filePath := filepath.Join(uploadDir, filename)
+
+	if err := c.SaveUploadedFile(file, filePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
+		return
+	}
+
+	attachmentURL := fmt.Sprintf("/api/v1/uploads/messages/%s", filename)
+
+	// Determine type based on extension
+	attachmentType := "file"
+	imgExts := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true}
+	if imgExts[filepath.Ext(file.Filename)] {
+		attachmentType = "image"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"attachment_url":  attachmentURL,
+		"attachment_type": attachmentType,
+	})
 }
 
 func GetConversations(c *gin.Context) {
