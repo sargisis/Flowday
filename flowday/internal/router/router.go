@@ -30,6 +30,7 @@ func Setup(r *gin.Engine) {
 		protected.POST("/users/email-change/request", handlers.RequestEmailChange)
 		protected.POST("/users/change-email/verify", handlers.ConfirmEmailChange)
 		protected.PATCH("/users/status", handlers.UpdateStatus)
+		protected.GET("/users/:id", handlers.GetUserByID)
 	}
 
 	// Serve static files for uploads
@@ -114,6 +115,15 @@ func Setup(r *gin.Engine) {
 	streakGroup.Use(middleware.AuthMiddleware())
 	{
 		streakGroup.GET("", handlers.GetStreak)
+	}
+
+	// ---------- MESSAGING ----------
+	messagesGroup := v1.Group("/messages")
+	messagesGroup.Use(middleware.AuthMiddleware())
+	{
+		messagesGroup.POST("/send", handlers.SendMessage)
+		messagesGroup.GET("/conversations", handlers.GetConversations)
+		messagesGroup.GET("/history/:partnerID", handlers.GetChatHistory)
 	}
 
 	// ---------- PROJECT MEMBERS & INVITATIONS ----------
