@@ -262,3 +262,25 @@ func UpdateStatus(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Status updated successfully"})
 }
+
+func GetUserByID(c *gin.Context) {
+	id, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID format"})
+		return
+	}
+
+	var user models.User
+	err = db.Users.FindOne(context.Background(), bson.M{"_id": id}).Decode(&user)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":         user.ID.Hex(),
+		"name":       user.Name,
+		"avatar_url": user.AvatarURL,
+		"status":     user.Status,
+	})
+}
