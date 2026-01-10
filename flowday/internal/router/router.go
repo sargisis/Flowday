@@ -4,6 +4,7 @@ import (
 	"flowday/internal/auth"
 	"flowday/internal/handlers"
 	"flowday/internal/middleware"
+	"log"
 
 	"github.com/gin-gonic/gin"
 )
@@ -122,6 +123,7 @@ func Setup(r *gin.Engine) {
 	messagesGroup.Use(middleware.AuthMiddleware())
 	{
 		messagesGroup.POST("/send", handlers.SendMessage)
+		messagesGroup.POST("/upload", handlers.UploadAttachment)
 		messagesGroup.GET("/conversations", handlers.GetConversations)
 		messagesGroup.GET("/history/:partnerID", handlers.GetChatHistory)
 	}
@@ -139,4 +141,9 @@ func Setup(r *gin.Engine) {
 	projectsGroup.POST("/:id/members", handlers.InviteMember)
 	projectsGroup.DELETE("/:id/members/:userID", handlers.RemoveMember)
 	projectsGroup.PUT("/:id/members/:userID", handlers.UpdateMemberRole)
+
+	// Log all routes
+	for _, route := range r.Routes() {
+		log.Printf("Route: %s %s", route.Method, route.Path)
+	}
 }
