@@ -17,4 +17,11 @@ type Task struct {
 	Project     *Project           `bson:"-" json:"project,omitempty"`
 	CreatedAt   time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt   time.Time          `bson:"updated_at" json:"updated_at"`
+	Subtasks    []Subtask          `bson:"subtasks,omitempty" json:"subtasks,omitempty"`
+}
+
+type Subtask struct {
+	ID        string `bson:"id" json:"id"`
+	Title     string `bson:"title" json:"title"`
+	Completed bool   `bson:"completed" json:"completed"`
 }

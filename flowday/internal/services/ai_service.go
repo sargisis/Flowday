@@ -39,28 +39,31 @@ func InitAIService() error {
 	return nil
 }
 
-func GenerateTaskPlan(ctx context.Context, title string) (string, error) {
+// EnrichedPlan holds the AI generated content
+type EnrichedPlan struct {
+	Description string   `json:"description"`
+	Subtasks    []string `json:"subtasks"`
+}
+
+func GenerateEnrichedPlan(ctx context.Context, title string) (*EnrichedPlan, error) {
 	if groqClient == nil {
-		return "", fmt.Errorf("AI Service not initialized or API configuration missing")
+		return nil, fmt.Errorf("AI Service not initialized or API configuration missing")
 	}
 
 	prompt := fmt.Sprintf(`
-You are a world-class productivity coach in the "Flow Day" ecosystem. Your goal is to structure tasks to help users achieve a state of deep flow.
-
-Create a detailed, inspiring, and actionable "Magic Plan" for the following task:
+You are a world-class productivity coach.
 **Task:** %s
 
-**Formatting Instructions:**
-1.  **Use Rich Markdown:** Headers, bold text lists, and blockquotes.
-2.  **Use Emojis:** Tastefully use emojis to make the plan visually engaging (e.g., 🚀, ✅, 🧠).
-3.  **Structure:**
-    *   **🎯 Goal:** A 1-sentence aspirational summary of what completing this achieves.
-    *   **📋 The Battle Plan:** A step-by-step checklist (3-5 items) on how to execute this. Use checkboxes [ ].
-    *   **💡 Pro Tip:** A short, genius hack or insight to do this faster or better.
-4.  **Tone:** Encouraging, professional, yet energetic. Avoid "corporate" speak.
-5.  **Spacing:** crucial! Leave empty lines between sections for readability.
+Output a JSON object with:
+1. "description": A motivating, markdown-formatted 2-3 sentence description. Use emojis.
+2. "subtasks": An array of 3-5 strings, each being a short actionable step.
 
-Make it look beautiful. `+"`"+`
+Example JSON:
+{
+  "description": "🚀 Let's crush this! ...",
+  "subtasks": ["Step 1", "Step 2"]
+}
+Return ONLY the JSON.
 `, title)
 
 	resp, err := groqClient.CreateChatCompletion(
@@ -73,19 +76,31 @@ Make it look beautiful. `+"`"+`
 					Content: prompt,
 				},
 			},
-			MaxTokens: 400,
+			MaxTokens: 500,
+			ResponseFormat: &openai.ChatCompletionResponseFormat{
+				Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+			},
 		},
 	)
 
 	if err != nil {
-		return "", fmt.Errorf("failed to generate plan with Groq: %w", err)
+		return nil, fmt.Errorf("failed to generate plan with Groq: %w", err)
 	}
 
 	if len(resp.Choices) == 0 {
-		return "", fmt.Errorf("no response from Groq")
+		return nil, fmt.Errorf("no response from Groq")
 	}
 
-	return resp.Choices[0].Message.Content, nil
+	var plan EnrichedPlan
+	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &plan); err != nil {
+		// Fallback for non-JSON response (rare with llama-3, but possible)
+		return &EnrichedPlan{
+			Description: resp.Choices[0].Message.Content,
+			Subtasks:    []string{},
+		}, nil
+	}
+
+	return &plan, nil
 }
 
 func DecomposeTask(ctx context.Context, title, description string) ([]string, error) {

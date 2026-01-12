@@ -70,35 +70,47 @@ func EnrichTask(c *gin.Context) {
 		return
 	}
 
-	userID, ok := c.Get("user_id")
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-		return
-	}
-
+	userID, _ := c.Get("user_id")
 	task, err := services.GetTask(userID.(primitive.ObjectID), taskID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
 		return
 	}
 
-	plan, err := services.GenerateTaskPlan(c.Request.Context(), task.Title)
+	// Call new AI Service
+	plan, err := services.GenerateEnrichedPlan(c.Request.Context(), task.Title)
 	if err != nil {
-		log.Printf("[AI] Enrich error: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI planning failed: " + err.Error()})
+		log.Printf("[AI] Enrich plan generation error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate plan"})
 		return
 	}
 
-	if err := services.UpdateTask(userID.(primitive.ObjectID), taskID, map[string]interface{}{
-		"description": plan,
-	}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update task description"})
+	// Convert plan subtasks to model Subtasks
+	var subtasks []models.Subtask
+	for _, stTitle := range plan.Subtasks {
+		subtasks = append(subtasks, models.Subtask{
+			ID:        primitive.NewObjectID().Hex(),
+			Title:     stTitle,
+			Completed: false,
+		})
+	}
+
+	// Update Task in DB
+	updates := map[string]interface{}{
+		"description": plan.Description,
+		"subtasks":    subtasks,
+	}
+
+	if err := services.UpdateTask(userID.(primitive.ObjectID), taskID, updates); err != nil {
+		log.Printf("[AI] Failed to save enriched task: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save plan"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":     "Task enriched successfully",
-		"description": plan,
+		"description": plan.Description,
+		"subtasks":    subtasks,
 	})
 }
 
