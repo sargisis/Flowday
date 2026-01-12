@@ -155,3 +155,25 @@ func RefreshHandler(c *gin.Context) {
 		"token": accessToken,
 	})
 }
+
+func LogoutHandler(c *gin.Context) {
+	// Get refresh token from cookie
+	refreshToken, err := c.Cookie("refresh_token")
+	if err != nil {
+		// No cookie found - user might have already logged out
+		c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+		return
+	}
+
+	// Delete refresh token from database
+	err = Logout(refreshToken)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to logout"})
+		return
+	}
+
+	// Clear the cookie
+	c.SetCookie("refresh_token", "", -1, "/api/v1/auth", "", false, true)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+}
