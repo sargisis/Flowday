@@ -15,9 +15,9 @@ func Setup(r *gin.Engine) {
 	// ---------- AUTH ----------
 	authGroup := v1.Group("/auth")
 	{
-		authGroup.POST("/register", auth.RegisterHandler)
-		authGroup.POST("/login", auth.LoginHandler)
-		authGroup.POST("/forgot-password", auth.ForgotPasswordHandler)
+		authGroup.POST("/register", middleware.RegisterRateLimiter(), auth.RegisterHandler)
+		authGroup.POST("/login", middleware.AuthRateLimiter(), auth.LoginHandler)
+		authGroup.POST("/forgot-password", middleware.ForgotPasswordRateLimiter(), auth.ForgotPasswordHandler)
 		authGroup.POST("/reset-password", auth.ResetPasswordHandler)
 		authGroup.POST("/refresh", auth.RefreshHandler)
 		authGroup.POST("/logout", auth.LogoutHandler)
