@@ -115,6 +115,7 @@ func RequestPasswordReset(email string) error {
 		Code:      code,
 		ExpiresAt: time.Now().Add(15 * time.Minute),
 		CreatedAt: time.Now(),
+		Used:      false,
 	}
 
 	_, err = db.PasswordResets.InsertOne(ctx, reset)
@@ -139,15 +140,25 @@ func ResetPassword(email, code, newPassword string) error {
 	ctx := context.Background()
 	var reset models.PasswordReset
 
-	// Find valid code
+	// Find valid code that hasn't been used
 	err := db.PasswordResets.FindOne(ctx, bson.M{
 		"email":      email,
 		"code":       code,
+		"used":       false, // ✅ Prevent code reuse
 		"expires_at": bson.M{"$gt": time.Now()},
 	}).Decode(&reset)
 
 	if err != nil {
 		return errors.New("invalid or expired code")
+	}
+
+	// ✅ Mark code as used immediately
+	_, err = db.PasswordResets.UpdateOne(ctx,
+		bson.M{"_id": reset.ID},
+		bson.M{"$set": bson.M{"used": true}},
+	)
+	if err != nil {
+		return err
 	}
 
 	// Hash new password
@@ -247,4 +258,24 @@ func Refresh(tokenStr string) (string, error) {
 	}
 
 	return accessToken, nil
+}
+
+func Logout(refreshToken string) error {
+	ctx := context.Background()
+
+	// Delete the refresh token from database
+	result, err := db.RefreshTokens.DeleteOne(ctx, bson.M{
+		"token": refreshToken,
+	})
+
+	if err != nil {
+		return err
+	}
+
+	if result.DeletedCount == 0 {
+		// Token not found - might have already been deleted
+		return nil // Don't error, user is logging out anyway
+	}
+
+	return nil
 }
