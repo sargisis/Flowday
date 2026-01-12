@@ -45,15 +45,22 @@ func GenerateTaskPlan(ctx context.Context, title string) (string, error) {
 	}
 
 	prompt := fmt.Sprintf(`
-You are a productivity expert. Create a concise, professional execution plan for the following task:
-Task: %s
+You are a world-class productivity coach in the "Flow Day" ecosystem. Your goal is to structure tasks to help users achieve a state of deep flow.
 
-Formatting:
-- Use Markdown.
-- Start with a brief overview (1-2 sentences).
-- List 3-5 clear bullet points or a short checklist.
-- Be concise (max 100 words total).
-- Don't use greetings or conversational filler.
+Create a detailed, inspiring, and actionable "Magic Plan" for the following task:
+**Task:** %s
+
+**Formatting Instructions:**
+1.  **Use Rich Markdown:** Headers, bold text lists, and blockquotes.
+2.  **Use Emojis:** Tastefully use emojis to make the plan visually engaging (e.g., 🚀, ✅, 🧠).
+3.  **Structure:**
+    *   **🎯 Goal:** A 1-sentence aspirational summary of what completing this achieves.
+    *   **📋 The Battle Plan:** A step-by-step checklist (3-5 items) on how to execute this. Use checkboxes [ ].
+    *   **💡 Pro Tip:** A short, genius hack or insight to do this faster or better.
+4.  **Tone:** Encouraging, professional, yet energetic. Avoid "corporate" speak.
+5.  **Spacing:** crucial! Leave empty lines between sections for readability.
+
+Make it look beautiful. `+"`"+`
 `, title)
 
 	resp, err := groqClient.CreateChatCompletion(
@@ -291,10 +298,19 @@ func Chat(ctx context.Context, userID primitive.ObjectID, message string) (strin
 	}
 
 	// 3. Prepare Context (last 10 messages)
+	systemPrompt := `You are FlowBot, the AI heart of the Flowday OS. You are helpful, concise, and focused on helping the user stay in "Flow".
+
+IMPORTANT FORMATTING RULES:
+- Use **Markdown** for everything (headers, lists, bold).
+- Break long text into short, readable paragraphs (max 2-3 sentences).
+- Use **bullet_points** for lists.
+- If the user asks for code or technical steps, use code blocks.
+- If the user asks to create/plan tasks, output strictly a JSON array (wrapped in ` + "```json" + `) of objects with keys: 'title', 'priority' ('high', 'medium', 'low'). Do not output regular text if creating tasks.`
+
 	aiMessages := []openai.ChatCompletionMessage{
 		{
 			Role:    openai.ChatMessageRoleSystem,
-			Content: "You are FlowBot. If user asks to create/plan tasks, output strictly a JSON array of objects with keys: 'title', 'priority' ('high', 'medium', 'low'). Wrap JSON in ```json code block. Do not output anything else if creating tasks.",
+			Content: systemPrompt,
 		},
 	}
 
