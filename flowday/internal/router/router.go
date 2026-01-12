@@ -56,6 +56,7 @@ func Setup(r *gin.Engine) {
 		tasksGroup.GET("/all", handlers.GetAllTasks)
 		tasksGroup.POST("", handlers.CreateTask)
 		tasksGroup.PATCH("/:id", handlers.UpdateTask)
+		tasksGroup.POST("/bulk-delete", handlers.BulkDeleteTasks)
 		tasksGroup.DELETE("/:id", handlers.DeleteTask)
 		tasksGroup.GET("/ids/:id", handlers.GetTask)
 

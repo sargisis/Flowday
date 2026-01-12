@@ -156,6 +156,19 @@ func DeleteTask(userID, taskID primitive.ObjectID) error {
 	return err
 }
 
+func BulkDeleteTasks(userID primitive.ObjectID, taskIDs []primitive.ObjectID) error {
+	for _, id := range taskIDs {
+		// We ignore "task not found" errors to ensure we delete as many as possible
+		// or if it was already deleted.
+		if err := DeleteTask(userID, id); err != nil {
+			if err.Error() != "task not found" {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func verifyProjectAccess(ctx context.Context, userID, projectID primitive.ObjectID) error {
 	log.Printf("[AccessCheck] User: %s, Project: %s", userID.Hex(), projectID.Hex())
 

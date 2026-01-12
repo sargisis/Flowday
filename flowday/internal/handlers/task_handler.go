@@ -155,6 +155,40 @@ func DeleteTask(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func BulkDeleteTasks(c *gin.Context) {
+	var req struct {
+		TaskIDs []string `json:"task_ids"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if len(req.TaskIDs) == 0 {
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	var objectIDs []primitive.ObjectID
+	for _, id := range req.TaskIDs {
+		oid, err := primitive.ObjectIDFromHex(id)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format: " + id})
+			return
+		}
+		objectIDs = append(objectIDs, oid)
+	}
+
+	userID, _ := c.Get("user_id")
+	if err := services.BulkDeleteTasks(userID.(primitive.ObjectID), objectIDs); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
 func GetTask(c *gin.Context) {
 	taskID, err := primitive.ObjectIDFromHex(c.Param("id"))
 	if err != nil {
