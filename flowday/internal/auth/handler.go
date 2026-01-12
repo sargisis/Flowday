@@ -3,6 +3,7 @@ package auth
 import (
 	appErrors "flowday/internal/errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -50,14 +51,19 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	token, err := Login(req.Email, req.Password)
+	accessToken, refreshToken, err := Login(req.Email, req.Password)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
+	// Set Refresh Token in HTTP-Only Cookie
+	// Path: /api/auth/refresh (limit scope)
+	// MaxAge: 7 days
+	c.SetCookie("refresh_token", refreshToken, int((time.Hour * 24 * 7).Seconds()), "/api/v1/auth", "", false, true)
+
 	c.JSON(http.StatusOK, gin.H{
-		"token": token,
+		"token": accessToken,
 	})
 }
 
@@ -126,5 +132,26 @@ func GetMeHandler(c *gin.Context) {
 		"velocity":       user.Velocity,
 		"xp":             user.XP,
 		"level":          user.Level,
+	})
+}
+
+func RefreshHandler(c *gin.Context) {
+	// Get refresh token from cookie
+	cookie, err := c.Cookie("refresh_token")
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Refresh token required"})
+		return
+	}
+
+	accessToken, err := Refresh(cookie)
+	if err != nil {
+		// Clear invalid cookie
+		c.SetCookie("refresh_token", "", -1, "/api/v1/auth", "", false, true)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"token": accessToken,
 	})
 }

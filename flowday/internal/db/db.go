@@ -28,6 +28,7 @@ var (
 	UserAchievements    *mongo.Collection
 	UserStreaks         *mongo.Collection
 	Messages            *mongo.Collection
+	RefreshTokens       *mongo.Collection
 )
 
 func Connect() {
@@ -65,7 +66,9 @@ func Connect() {
 	Achievements = Database.Collection("achievements")
 	UserAchievements = Database.Collection("user_achievements")
 	UserStreaks = Database.Collection("user_streaks")
+	UserStreaks = Database.Collection("user_streaks")
 	Messages = Database.Collection("messages")
+	RefreshTokens = Database.Collection("refresh_tokens")
 
 	log.Println("Connected to MongoDB")
 }

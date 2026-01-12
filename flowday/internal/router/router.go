@@ -19,6 +19,7 @@ func Setup(r *gin.Engine) {
 		authGroup.POST("/login", auth.LoginHandler)
 		authGroup.POST("/forgot-password", auth.ForgotPasswordHandler)
 		authGroup.POST("/reset-password", auth.ResetPasswordHandler)
+		authGroup.POST("/refresh", auth.RefreshHandler)
 	}
 
 	// ---------- PROTECTED ----------
