@@ -56,23 +56,44 @@ func Register(name, email, password string) (*models.User, error) {
 	return &user, nil
 }
 
-func Login(email, password string) (string, error) {
+func Login(email, password string) (string, string, error) {
 	ctx := context.Background()
 	var user models.User
 
 	err := db.Users.FindOne(ctx, bson.M{"email": email}).Decode(&user)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return "", appErrors.ErrNotFound
+			return "", "", appErrors.ErrNotFound
 		}
-		return "", err
+		return "", "", err
 	}
 
 	if !CheckPassword(user.Password, password) {
-		return "", errors.New("invalid credentials")
+		return "", "", errors.New("invalid credentials")
 	}
 
-	return GenerateToken(user.ID)
+	accessToken, refreshToken, err := GenerateTokens(user.ID)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Store refresh token in DB
+	rawToken := models.RefreshToken{
+		ID:        primitive.NewObjectID(),
+		UserID:    user.ID,
+		Token:     refreshToken,
+		ExpiresAt: time.Now().Add(time.Hour * 24 * 7),
+		CreatedAt: time.Now(),
+		Revoked:   false,
+	}
+
+	// Assuming db.RefreshTokens exists (we need to initialize it in db/db.go)
+	_, err = db.RefreshTokens.InsertOne(ctx, rawToken)
+	if err != nil {
+		return "", "", err
+	}
+
+	return accessToken, refreshToken, nil
 }
 
 func RequestPasswordReset(email string) error {
@@ -187,4 +208,43 @@ func GetUserByID(idStr string) (*models.User, error) {
 	}
 
 	return &user, nil
+}
+
+func Refresh(tokenStr string) (string, error) {
+	// 1. Validate signature and expiration
+	userIDStr, err := ValidateRefreshToken(tokenStr)
+	if err != nil {
+		return "", err
+	}
+
+	userID, err := primitive.ObjectIDFromHex(userIDStr)
+	if err != nil {
+		return "", errors.New("invalid user id in token")
+	}
+
+	// 2. Check DB logic
+	ctx := context.Background()
+	var storedToken models.RefreshToken
+	err = db.RefreshTokens.FindOne(ctx, bson.M{
+		"token": tokenStr,
+	}).Decode(&storedToken)
+
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return "", errors.New("refresh token not found or revoked")
+		}
+		return "", err
+	}
+
+	if storedToken.Revoked {
+		return "", errors.New("refresh token has been revoked")
+	}
+
+	// 3. Generate New Access Token
+	accessToken, err := GenerateAccessToken(userID)
+	if err != nil {
+		return "", err
+	}
+
+	return accessToken, nil
 }
