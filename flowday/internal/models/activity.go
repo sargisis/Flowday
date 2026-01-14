@@ -11,6 +11,7 @@ type ActivityType string
 const (
 	ActivityTaskCreated    ActivityType = "task_created"
 	ActivityTaskCompleted  ActivityType = "task_completed"
+	ActivityTaskCommented  ActivityType = "task_commented"
 	ActivityFocusStarted   ActivityType = "focus_started"
 	ActivityFocusCompleted ActivityType = "focus_completed"
 	ActivityProjectCreated ActivityType = "project_created"

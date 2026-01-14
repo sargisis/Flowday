@@ -74,6 +74,18 @@ func Setup(r *gin.Engine) {
 		// 🤖 AI features
 		tasksGroup.POST("/:id/decompose", handlers.DecomposeTask)
 		tasksGroup.POST("/:id/enrich", handlers.EnrichTask)
+
+		// 💬 Comments
+		tasksGroup.POST("/:task_id/comments", handlers.CreateCommentHandler)
+		tasksGroup.GET("/:task_id/comments", handlers.GetTaskCommentsHandler)
+	}
+
+	// ---------- COMMENTS ----------
+	commentsGroup := v1.Group("/comments")
+	commentsGroup.Use(middleware.AuthMiddleware())
+	{
+		commentsGroup.PUT("/:comment_id", handlers.UpdateCommentHandler)
+		commentsGroup.DELETE("/:comment_id", handlers.DeleteCommentHandler)
 	}
 
 	// ---------- AI SERVICES ----------
