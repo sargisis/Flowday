@@ -63,3 +63,13 @@ func RegisterRateLimiter() gin.HandlerFunc {
 func ForgotPasswordRateLimiter() gin.HandlerFunc {
 	return RateLimitMiddleware("3-M") // 3 requests per minute
 }
+
+// ResetPasswordRateLimiter returns a rate limiter for password reset confirmation
+func ResetPasswordRateLimiter() gin.HandlerFunc {
+	return RateLimitMiddleware("5-M") // 5 requests per minute (allow more attempts than forgot-password)
+}
+
+// RefreshRateLimiter returns a rate limiter for token refresh
+func RefreshRateLimiter() gin.HandlerFunc {
+	return RateLimitMiddleware("10-M") // 10 requests per minute (less restrictive for refresh)
+}
