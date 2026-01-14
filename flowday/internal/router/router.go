@@ -55,6 +55,7 @@ func Setup(r *gin.Engine) {
 	{
 		tasksGroup.GET("", handlers.GetTasks) // ?project_id=
 		tasksGroup.GET("/all", handlers.GetAllTasks)
+		tasksGroup.GET("/search", handlers.SearchTasks) // ?q=keyword&project_id=xxx&status=in_progress&priority=high
 		tasksGroup.POST("", handlers.CreateTask)
 		tasksGroup.PATCH("/:id", handlers.UpdateTask)
 		tasksGroup.POST("/bulk-delete", handlers.BulkDeleteTasks)

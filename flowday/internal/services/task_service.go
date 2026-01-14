@@ -360,3 +360,103 @@ func GetAllTasks(userID primitive.ObjectID) ([]models.Task, error) {
 func GetUserTasks(userID primitive.ObjectID) ([]models.Task, error) {
 	return GetAllTasks(userID)
 }
+
+// SearchTasks searches and filters tasks across all user's projects
+func SearchTasks(userID primitive.ObjectID, searchQuery dto.SearchTasksQuery) ([]models.Task, dto.PaginationMeta, error) {
+	ctx := context.Background()
+
+	// Validate and set defaults
+	searchQuery.ValidateAndSetDefaults()
+
+	// Get user's projects (User owns these OR is a member)
+	projects, err := GetProjects(userID)
+	if err != nil {
+		return nil, dto.PaginationMeta{}, err
+	}
+
+	projectIDs := make([]primitive.ObjectID, len(projects))
+	for i, p := range projects {
+		projectIDs[i] = p.ID
+	}
+
+	// Build filter
+	filter := bson.M{
+		"project_id": bson.M{"$in": projectIDs},
+	}
+
+	// Filter by project_id if specified
+	if searchQuery.ProjectID != "" {
+		projectID, err := primitive.ObjectIDFromHex(searchQuery.ProjectID)
+		if err == nil {
+			// Verify user has access to this project
+			if err := verifyProjectAccess(ctx, userID, projectID); err != nil {
+				return nil, dto.PaginationMeta{}, errors.New("access denied")
+			}
+			filter["project_id"] = projectID
+		}
+	}
+
+	// Filter by status
+	if searchQuery.Status != "" {
+		filter["status"] = searchQuery.Status
+	}
+
+	// Filter by priority
+	if searchQuery.Priority != "" {
+		filter["priority"] = searchQuery.Priority
+	}
+
+	// Filter by due date presence
+	if searchQuery.HasDueDate != nil {
+		if *searchQuery.HasDueDate {
+			filter["due_date"] = bson.M{"$ne": nil}
+		} else {
+			filter["due_date"] = nil
+		}
+	}
+
+	// Full-text search in title and description
+	if searchQuery.Query != "" {
+		filter["$or"] = []bson.M{
+			{"title": bson.M{"$regex": searchQuery.Query, "$options": "i"}},
+			{"description": bson.M{"$regex": searchQuery.Query, "$options": "i"}},
+		}
+	}
+
+	// Get total count
+	total, err := db.Tasks.CountDocuments(ctx, filter)
+	if err != nil {
+		return nil, dto.PaginationMeta{}, err
+	}
+
+	// Build sort order
+	sortOrder := 1 // asc
+	if searchQuery.Order == "desc" {
+		sortOrder = -1 // desc
+	}
+	sortField := searchQuery.Sort
+	if sortField == "" {
+		sortField = "created_at"
+	}
+
+	// Build find options
+	findOptions := options.Find().
+		SetLimit(int64(searchQuery.Limit)).
+		SetSkip(int64(searchQuery.GetOffset())).
+		SetSort(bson.M{sortField: sortOrder})
+
+	cursor, err := db.Tasks.Find(ctx, filter, findOptions)
+	if err != nil {
+		return nil, dto.PaginationMeta{}, err
+	}
+	defer cursor.Close(ctx)
+
+	var tasks []models.Task
+	if err = cursor.All(ctx, &tasks); err != nil {
+		return nil, dto.PaginationMeta{}, err
+	}
+
+	meta := dto.NewPaginationMeta(searchQuery.PaginationQuery, total)
+
+	return tasks, meta, nil
+}
