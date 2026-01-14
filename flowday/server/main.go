@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -36,12 +37,32 @@ func main() {
 
 	r := gin.Default()
 
-	// ✅ CORS - Allow all localhost for development
+	// ✅ SECURITY: CORS configuration - support both development and production
 	r.Use(cors.New(cors.Config{
 		AllowOriginFunc: func(origin string) bool {
-			// Allow all localhost and 127.0.0.1 origins in development
-			return strings.HasPrefix(origin, "http://localhost") ||
-				strings.HasPrefix(origin, "http://127.0.0.1")
+			// Development: allow localhost
+			if strings.HasPrefix(origin, "http://localhost") ||
+				strings.HasPrefix(origin, "http://127.0.0.1") {
+				return true
+			}
+
+			// Production: check ALLOWED_ORIGINS environment variable
+			allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
+			if allowedOrigins == "" {
+				// If not set, default to localhost only (safe default)
+				return false
+			}
+
+			// Parse comma-separated list of allowed origins
+			origins := strings.Split(allowedOrigins, ",")
+			for _, allowed := range origins {
+				allowed = strings.TrimSpace(allowed)
+				if origin == allowed {
+					return true
+				}
+			}
+
+			return false
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Cookie"},

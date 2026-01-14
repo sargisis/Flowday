@@ -3,6 +3,7 @@ package auth
 import (
 	appErrors "flowday/internal/errors"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -57,10 +58,12 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	// Set Refresh Token in HTTP-Only Cookie
+	// ✅ SECURITY: Set Refresh Token in HTTP-Only Cookie with Secure flag for production
 	// Path: /api/auth/refresh (limit scope)
 	// MaxAge: 7 days
-	c.SetCookie("refresh_token", refreshToken, int((time.Hour * 24 * 7).Seconds()), "/api/v1/auth", "", false, true)
+	// Secure: true in production (HTTPS), false in development
+	secure := os.Getenv("ENV") == "production" || os.Getenv("HTTPS") == "true"
+	c.SetCookie("refresh_token", refreshToken, int((time.Hour * 24 * 7).Seconds()), "/api/v1/auth", "", secure, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"token": accessToken,
@@ -146,7 +149,8 @@ func RefreshHandler(c *gin.Context) {
 	accessToken, err := Refresh(cookie)
 	if err != nil {
 		// Clear invalid cookie
-		c.SetCookie("refresh_token", "", -1, "/api/v1/auth", "", false, true)
+		secure := os.Getenv("ENV") == "production" || os.Getenv("HTTPS") == "true"
+		c.SetCookie("refresh_token", "", -1, "/api/v1/auth", "", secure, true)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
@@ -173,7 +177,8 @@ func LogoutHandler(c *gin.Context) {
 	}
 
 	// Clear the cookie
-	c.SetCookie("refresh_token", "", -1, "/api/v1/auth", "", false, true)
+	secure := os.Getenv("ENV") == "production" || os.Getenv("HTTPS") == "true"
+	c.SetCookie("refresh_token", "", -1, "/api/v1/auth", "", secure, true)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }

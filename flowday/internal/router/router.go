@@ -18,9 +18,10 @@ func Setup(r *gin.Engine) {
 		authGroup.POST("/register", middleware.RegisterRateLimiter(), auth.RegisterHandler)
 		authGroup.POST("/login", middleware.AuthRateLimiter(), auth.LoginHandler)
 		authGroup.POST("/forgot-password", middleware.ForgotPasswordRateLimiter(), auth.ForgotPasswordHandler)
-		authGroup.POST("/reset-password", auth.ResetPasswordHandler)
-		authGroup.POST("/refresh", auth.RefreshHandler)
-		authGroup.POST("/logout", auth.LogoutHandler)
+		// ✅ SECURITY: Add rate limiting to prevent brute-force attacks
+		authGroup.POST("/reset-password", middleware.ResetPasswordRateLimiter(), auth.ResetPasswordHandler)
+		authGroup.POST("/refresh", middleware.RefreshRateLimiter(), auth.RefreshHandler)
+		authGroup.POST("/logout", middleware.AuthRateLimiter(), auth.LogoutHandler)
 	}
 
 	// ---------- PROTECTED ----------
