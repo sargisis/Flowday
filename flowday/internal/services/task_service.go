@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"flowday/internal/db"
+	"flowday/internal/dto"
 	"flowday/internal/models"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func CreateTask(userID primitive.ObjectID, task *models.Task) error {
@@ -70,6 +72,77 @@ func GetTasksByProject(userID, projectID primitive.ObjectID) ([]models.Task, err
 	}
 
 	return tasks, nil
+}
+
+// GetTasksByProjectPaginated returns paginated tasks for a project
+func GetTasksByProjectPaginated(userID, projectID primitive.ObjectID, pagination dto.PaginationQuery) ([]models.Task, dto.PaginationMeta, error) {
+	ctx := context.Background()
+
+	// Validate and set defaults
+	pagination.ValidateAndSetDefaults()
+
+	// Verify project exists and user has access (owner OR accepted member)
+	var project models.Project
+	err := db.Projects.FindOne(ctx, bson.M{"_id": projectID}).Decode(&project)
+	if err != nil {
+		return nil, dto.PaginationMeta{}, errors.New("project not found")
+	}
+
+	// Check if user is owner
+	isOwner := project.UserID == userID
+
+	// If not owner, check if user is accepted member
+	if !isOwner {
+		var membership models.ProjectMember
+		err := db.ProjectMembers.FindOne(ctx, bson.M{
+			"project_id": projectID,
+			"user_id":    userID,
+			"status":     "accepted",
+		}).Decode(&membership)
+
+		if err != nil {
+			return nil, dto.PaginationMeta{}, errors.New("access denied")
+		}
+	}
+
+	filter := bson.M{"project_id": projectID}
+
+	// Get total count
+	total, err := db.Tasks.CountDocuments(ctx, filter)
+	if err != nil {
+		return nil, dto.PaginationMeta{}, err
+	}
+
+	// Build sort order
+	sortOrder := 1 // asc
+	if pagination.Order == "desc" {
+		sortOrder = -1 // desc
+	}
+	sortField := pagination.Sort
+	if sortField == "" {
+		sortField = "created_at"
+	}
+
+	// Build find options
+	findOptions := options.Find().
+		SetLimit(int64(pagination.Limit)).
+		SetSkip(int64(pagination.GetOffset())).
+		SetSort(bson.M{sortField: sortOrder})
+
+	cursor, err := db.Tasks.Find(ctx, filter, findOptions)
+	if err != nil {
+		return nil, dto.PaginationMeta{}, err
+	}
+	defer cursor.Close(ctx)
+
+	var tasks []models.Task
+	if err = cursor.All(ctx, &tasks); err != nil {
+		return nil, dto.PaginationMeta{}, err
+	}
+
+	meta := dto.NewPaginationMeta(pagination, total)
+
+	return tasks, meta, nil
 }
 
 func UpdateTask(userID, taskID primitive.ObjectID, updates map[string]interface{}) error {

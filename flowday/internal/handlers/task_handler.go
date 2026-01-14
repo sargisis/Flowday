@@ -70,14 +70,24 @@ func GetTasks(c *gin.Context) {
 		return
 	}
 
+	// Parse pagination query
+	var pagination dto.PaginationQuery
+	if err := c.ShouldBindQuery(&pagination); err != nil {
+		// If pagination params are not provided, use defaults
+		pagination = dto.PaginationQuery{}
+	}
+
 	userID, _ := c.Get("user_id")
-	tasks, err := services.GetTasksByProject(userID.(primitive.ObjectID), projectID)
+	tasks, meta, err := services.GetTasksByProjectPaginated(userID.(primitive.ObjectID), projectID, pagination)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(200, tasks)
+	c.JSON(200, gin.H{
+		"data": tasks,
+		"meta": meta,
+	})
 }
 
 func UpdateTask(c *gin.Context) {
