@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -15,6 +17,7 @@ import (
 func getSecret() []byte {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
+		log.Println("[WARNING] JWT_SECRET not set, using default key (INSECURE - for development only)")
 		return []byte("super-secret-key")
 	}
 	return []byte(secret)
@@ -42,6 +45,10 @@ func AuthMiddleware() gin.HandlerFunc {
 		tokenStr := parts[1]
 
 		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+			// ✅ SECURITY: Validate signing method to prevent algorithm confusion attacks
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			}
 			return getSecret(), nil
 		})
 
@@ -52,8 +59,23 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		claims := token.Claims.(jwt.MapClaims)
-		userIDStr := claims["user_id"].(string)
+		// ✅ SECURITY: Safe type assertion with error handling
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "Invalid token claims",
+			})
+			return
+		}
+
+		// ✅ SECURITY: Safe type assertion for user_id
+		userIDStr, ok := claims["user_id"].(string)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "Invalid user ID in token",
+			})
+			return
+		}
 
 		userID, err := primitive.ObjectIDFromHex(userIDStr)
 		if err != nil {

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -75,15 +76,41 @@ func UploadAvatar(c *gin.Context) {
 		return
 	}
 
+	// ✅ SECURITY: Validate file size (max 5MB for avatars)
+	const maxAvatarSize = 5 * 1024 * 1024 // 5MB
+	if file.Size > maxAvatarSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File size exceeds maximum allowed size (5MB)"})
+		return
+	}
+
+	// ✅ SECURITY: Validate file extension and sanitize
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	// Remove any path traversal attempts
+	ext = strings.TrimPrefix(ext, ".")
+	ext = strings.Trim(ext, "/\\")
+	
+	// Allowed image extensions
+	allowedExts := map[string]bool{
+		"jpg":  true,
+		"jpeg": true,
+		"png":  true,
+		"gif":  true,
+		"webp": true,
+	}
+	
+	if ext == "" || !allowedExts[ext] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type. Only JPG, JPEG, PNG, GIF, and WEBP are allowed"})
+		return
+	}
+
 	// Create uploads directory if not exists
 	uploadDir := "uploads"
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		os.Mkdir(uploadDir, 0755)
 	}
 
-	// Generate unique filename
-	ext := filepath.Ext(file.Filename)
-	filename := fmt.Sprintf("%s_%d%s", userID.Hex(), time.Now().Unix(), ext)
+	// ✅ SECURITY: Generate safe filename (no user input in path)
+	filename := fmt.Sprintf("%s_%d.%s", userID.Hex(), time.Now().Unix(), ext)
 	filePath := filepath.Join(uploadDir, filename)
 
 	if err := c.SaveUploadedFile(file, filePath); err != nil {
