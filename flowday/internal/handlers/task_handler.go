@@ -226,3 +226,25 @@ func GetAllTasks(c *gin.Context) {
 
 	c.JSON(http.StatusOK, tasks)
 }
+
+func SearchTasks(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+
+	// Parse search query
+	var searchQuery dto.SearchTasksQuery
+	if err := c.ShouldBindQuery(&searchQuery); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid query parameters"})
+		return
+	}
+
+	tasks, meta, err := services.SearchTasks(userID.(primitive.ObjectID), searchQuery)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": tasks,
+		"meta": meta,
+	})
+}
