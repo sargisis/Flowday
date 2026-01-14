@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 func getSecret() []byte {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
+		log.Println("[WARNING] JWT_SECRET not set, using default key (INSECURE - for development only)")
 		return []byte("super-secret-key")
 	}
 	return []byte(secret)
@@ -19,6 +22,7 @@ func getSecret() []byte {
 func getRefreshSecret() []byte {
 	secret := os.Getenv("JWT_REFRESH_SECRET")
 	if secret == "" {
+		log.Println("[WARNING] JWT_REFRESH_SECRET not set, using default key (INSECURE - for development only)")
 		return []byte("super-secret-refresh-key")
 	}
 	return []byte(secret)
@@ -63,6 +67,10 @@ func GenerateTokens(userID primitive.ObjectID) (string, string, error) {
 
 func ValidateRefreshToken(tokenStr string) (string, error) {
 	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+		// ✅ SECURITY: Validate signing method to prevent algorithm confusion attacks
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
 		return getRefreshSecret(), nil
 	})
 
@@ -70,6 +78,7 @@ func ValidateRefreshToken(tokenStr string) (string, error) {
 		return "", err
 	}
 
+	// ✅ SECURITY: Safe type assertion with error handling
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		return "", jwt.ErrTokenInvalidClaims
@@ -80,5 +89,11 @@ func ValidateRefreshToken(tokenStr string) (string, error) {
 		return "", jwt.ErrTokenInvalidClaims
 	}
 
-	return claims["user_id"].(string), nil
+	// ✅ SECURITY: Safe type assertion for user_id
+	userIDStr, ok := claims["user_id"].(string)
+	if !ok {
+		return "", jwt.ErrTokenInvalidClaims
+	}
+
+	return userIDStr, nil
 }

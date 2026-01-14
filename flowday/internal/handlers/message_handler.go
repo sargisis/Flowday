@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -48,15 +49,41 @@ func UploadAttachment(c *gin.Context) {
 		return
 	}
 
+	// ✅ SECURITY: Validate file size (max 10MB for attachments)
+	const maxAttachmentSize = 10 * 1024 * 1024 // 10MB
+	if file.Size > maxAttachmentSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File size exceeds maximum allowed size (10MB)"})
+		return
+	}
+
+	// ✅ SECURITY: Sanitize file extension
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	// Remove any path traversal attempts
+	ext = strings.TrimPrefix(ext, ".")
+	ext = strings.Trim(ext, "/\\")
+	
+	// Basic extension validation - prevent executable files
+	dangerousExts := map[string]bool{
+		"exe": true, "bat": true, "cmd": true, "com": true, "pif": true,
+		"scr": true, "vbs": true, "js": true, "jar": true, "sh": true,
+	}
+	if dangerousExts[ext] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File type not allowed"})
+		return
+	}
+
 	// Create uploads/messages directory if not exists
 	uploadDir := filepath.Join("uploads", "messages")
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		os.MkdirAll(uploadDir, 0755)
 	}
 
-	// Generate unique filename
-	ext := filepath.Ext(file.Filename)
-	filename := fmt.Sprintf("msg_%d%s", time.Now().UnixNano(), ext)
+	// ✅ SECURITY: Generate safe filename (no user input in path)
+	var safeExt string
+	if ext != "" {
+		safeExt = "." + ext
+	}
+	filename := fmt.Sprintf("msg_%d%s", time.Now().UnixNano(), safeExt)
 	filePath := filepath.Join(uploadDir, filename)
 
 	if err := c.SaveUploadedFile(file, filePath); err != nil {
@@ -68,8 +95,8 @@ func UploadAttachment(c *gin.Context) {
 
 	// Determine type based on extension
 	attachmentType := "file"
-	imgExts := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true}
-	if imgExts[filepath.Ext(file.Filename)] {
+	imgExts := map[string]bool{"jpg": true, "jpeg": true, "png": true, "gif": true, "webp": true}
+	if imgExts[ext] {
 		attachmentType = "image"
 	}
 
