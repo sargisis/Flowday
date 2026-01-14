@@ -18,6 +18,16 @@ type Task struct {
 	CreatedAt   time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt   time.Time          `bson:"updated_at" json:"updated_at"`
 	Subtasks    []Subtask          `bson:"subtasks,omitempty" json:"subtasks,omitempty"`
+	Attachments []Attachment       `bson:"attachments,omitempty" json:"attachments,omitempty"`
+}
+
+type Attachment struct {
+	ID         string    `bson:"id" json:"id"`
+	URL        string    `bson:"url" json:"url"`
+	Type       string    `bson:"type" json:"type"` // "image" or "file"
+	Filename   string    `bson:"filename" json:"filename"`
+	Size       int64     `bson:"size" json:"size"` // File size in bytes
+	UploadedAt time.Time `bson:"uploaded_at" json:"uploaded_at"`
 }
 
 type Subtask struct {

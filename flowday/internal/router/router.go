@@ -57,10 +57,7 @@ func Setup(r *gin.Engine) {
 		tasksGroup.GET("/all", handlers.GetAllTasks)
 		tasksGroup.GET("/search", handlers.SearchTasks) // ?q=keyword&project_id=xxx&status=in_progress&priority=high
 		tasksGroup.POST("", handlers.CreateTask)
-		tasksGroup.PATCH("/:id", handlers.UpdateTask)
 		tasksGroup.POST("/bulk-delete", handlers.BulkDeleteTasks)
-		tasksGroup.DELETE("/:id", handlers.DeleteTask)
-		tasksGroup.GET("/ids/:id", handlers.GetTask)
 
 		// ✅ calendar API
 		tasksGroup.GET("/by-date", handlers.GetTasksByDate) // ?date=YYYY-MM-DD
@@ -71,13 +68,23 @@ func Setup(r *gin.Engine) {
 		// ✅ stats API
 		tasksGroup.GET("/stats", handlers.GetTaskStats)
 
-		// 🤖 AI features
+		// 💬 Comments (must be before generic :id routes to avoid conflict)
+		tasksGroup.POST("/:id/comments", handlers.CreateCommentHandler)
+		tasksGroup.GET("/:id/comments", handlers.GetTaskCommentsHandler)
+
+		// 📎 Attachments (must be before generic :id routes to avoid conflict)
+		tasksGroup.POST("/:id/attachments", handlers.UploadTaskAttachment)
+		tasksGroup.GET("/:id/attachments", handlers.GetTaskAttachments)
+		tasksGroup.DELETE("/:id/attachments/:attachment_id", handlers.DeleteTaskAttachment)
+
+		// 🤖 AI features (must be before generic :id routes to avoid conflict)
 		tasksGroup.POST("/:id/decompose", handlers.DecomposeTask)
 		tasksGroup.POST("/:id/enrich", handlers.EnrichTask)
 
-		// 💬 Comments
-		tasksGroup.POST("/:task_id/comments", handlers.CreateCommentHandler)
-		tasksGroup.GET("/:task_id/comments", handlers.GetTaskCommentsHandler)
+		// Generic task operations (keep at the end)
+		tasksGroup.PATCH("/:id", handlers.UpdateTask)
+		tasksGroup.DELETE("/:id", handlers.DeleteTask)
+		tasksGroup.GET("/ids/:id", handlers.GetTask)
 	}
 
 	// ---------- COMMENTS ----------

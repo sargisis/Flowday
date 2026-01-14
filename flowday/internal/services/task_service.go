@@ -460,3 +460,90 @@ func SearchTasks(userID primitive.ObjectID, searchQuery dto.SearchTasksQuery) ([
 
 	return tasks, meta, nil
 }
+
+// AddTaskAttachment adds an attachment to a task
+func AddTaskAttachment(userID, taskID primitive.ObjectID, attachment models.Attachment) error {
+	ctx := context.Background()
+
+	// Verify task access
+	task, err := GetTask(userID, taskID)
+	if err != nil {
+		return err
+	}
+
+	// Initialize attachments array if nil
+	if task.Attachments == nil {
+		task.Attachments = []models.Attachment{}
+	}
+
+	// Add attachment to array
+	task.Attachments = append(task.Attachments, attachment)
+
+	// Update task
+	update := bson.M{
+		"$set": bson.M{
+			"attachments": task.Attachments,
+			"updated_at":  time.Now(),
+		},
+	}
+
+	_, err = db.Tasks.UpdateOne(ctx, bson.M{"_id": taskID}, update)
+	return err
+}
+
+// GetTaskAttachments returns all attachments for a task
+func GetTaskAttachments(userID, taskID primitive.ObjectID) ([]models.Attachment, error) {
+	// Verify task access
+	task, err := GetTask(userID, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	if task.Attachments == nil {
+		return []models.Attachment{}, nil
+	}
+
+	return task.Attachments, nil
+}
+
+// DeleteTaskAttachment removes an attachment from a task
+func DeleteTaskAttachment(userID, taskID primitive.ObjectID, attachmentID string) (*models.Attachment, error) {
+	ctx := context.Background()
+
+	// Verify task access
+	task, err := GetTask(userID, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find attachment to delete
+	var attachmentToDelete *models.Attachment
+	var updatedAttachments []models.Attachment
+
+	for _, att := range task.Attachments {
+		if att.ID == attachmentID {
+			attachmentToDelete = &att
+		} else {
+			updatedAttachments = append(updatedAttachments, att)
+		}
+	}
+
+	if attachmentToDelete == nil {
+		return nil, errors.New("attachment not found")
+	}
+
+	// Update task
+	update := bson.M{
+		"$set": bson.M{
+			"attachments": updatedAttachments,
+			"updated_at":  time.Now(),
+		},
+	}
+
+	_, err = db.Tasks.UpdateOne(ctx, bson.M{"_id": taskID}, update)
+	if err != nil {
+		return nil, err
+	}
+
+	return attachmentToDelete, nil
+}

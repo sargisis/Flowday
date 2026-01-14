@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -247,4 +250,146 @@ func SearchTasks(c *gin.Context) {
 		"data": tasks,
 		"meta": meta,
 	})
+}
+
+// UploadTaskAttachment handles file uploads for tasks
+func UploadTaskAttachment(c *gin.Context) {
+	taskID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format"})
+		return
+	}
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
+		return
+	}
+
+	// ✅ SECURITY: Validate file size (max 10MB for attachments)
+	const maxAttachmentSize = 10 * 1024 * 1024 // 10MB
+	if file.Size > maxAttachmentSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File size exceeds maximum allowed size (10MB)"})
+		return
+	}
+
+	// ✅ SECURITY: Sanitize file extension
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	ext = strings.TrimPrefix(ext, ".")
+	ext = strings.Trim(ext, "/\\")
+
+	// Basic extension validation - prevent executable files
+	dangerousExts := map[string]bool{
+		"exe": true, "bat": true, "cmd": true, "com": true, "pif": true,
+		"scr": true, "vbs": true, "js": true, "jar": true, "sh": true,
+	}
+	if dangerousExts[ext] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File type not allowed"})
+		return
+	}
+
+	// Verify task access (will be checked in AddTaskAttachment)
+	userID, _ := c.Get("user_id")
+
+	// Create uploads/tasks directory if not exists
+	uploadDir := filepath.Join("uploads", "tasks")
+	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+		os.MkdirAll(uploadDir, 0755)
+	}
+
+	// ✅ SECURITY: Generate safe filename (no user input in path)
+	var safeExt string
+	if ext != "" {
+		safeExt = "." + ext
+	}
+	filename := fmt.Sprintf("task_%s_%d%s", taskID.Hex(), time.Now().UnixNano(), safeExt)
+	filePath := filepath.Join(uploadDir, filename)
+
+	if err := c.SaveUploadedFile(file, filePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
+		return
+	}
+
+	attachmentURL := fmt.Sprintf("/api/v1/uploads/tasks/%s", filename)
+
+	// Determine type based on extension
+	attachmentType := "file"
+	imgExts := map[string]bool{"jpg": true, "jpeg": true, "png": true, "gif": true, "webp": true, "svg": true}
+	if imgExts[ext] {
+		attachmentType = "image"
+	}
+
+	// Create attachment object
+	attachment := models.Attachment{
+		ID:         primitive.NewObjectID().Hex(),
+		URL:        attachmentURL,
+		Type:       attachmentType,
+		Filename:   file.Filename,
+		Size:       file.Size,
+		UploadedAt: time.Now(),
+	}
+
+	// Add attachment to task
+	if err := services.AddTaskAttachment(userID.(primitive.ObjectID), taskID, attachment); err != nil {
+		// Clean up uploaded file if database operation fails
+		os.Remove(filePath)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save attachment"})
+		return
+	}
+
+	c.JSON(http.StatusOK, attachment)
+}
+
+// GetTaskAttachments returns all attachments for a task
+func GetTaskAttachments(c *gin.Context) {
+	taskID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format"})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	attachments, err := services.GetTaskAttachments(userID.(primitive.ObjectID), taskID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, attachments)
+}
+
+// DeleteTaskAttachment removes an attachment from a task
+func DeleteTaskAttachment(c *gin.Context) {
+	taskID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format"})
+		return
+	}
+
+	attachmentID := c.Param("attachment_id")
+	if attachmentID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "attachment_id is required"})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	attachment, err := services.DeleteTaskAttachment(userID.(primitive.ObjectID), taskID, attachmentID)
+	if err != nil {
+		if err.Error() == "task not found" || err.Error() == "attachment not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	// Delete physical file
+	if attachment.URL != "" {
+		// Extract filename from URL
+		filename := filepath.Base(attachment.URL)
+		filePath := filepath.Join("uploads", "tasks", filename)
+		os.Remove(filePath) // Ignore error if file doesn't exist
+	}
+
+	c.Status(http.StatusNoContent)
 }

@@ -10,12 +10,12 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// CreateCommentHandler handles POST /api/v1/tasks/:task_id/comments
+// CreateCommentHandler handles POST /api/v1/tasks/:id/comments
 func CreateCommentHandler(c *gin.Context) {
-	taskIDStr := c.Param("task_id")
+	taskIDStr := c.Param("id")
 	taskID, err := primitive.ObjectIDFromHex(taskIDStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task_id format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format"})
 		return
 	}
 
@@ -35,12 +35,12 @@ func CreateCommentHandler(c *gin.Context) {
 	c.JSON(http.StatusCreated, comment)
 }
 
-// GetTaskCommentsHandler handles GET /api/v1/tasks/:task_id/comments
+// GetTaskCommentsHandler handles GET /api/v1/tasks/:id/comments
 func GetTaskCommentsHandler(c *gin.Context) {
-	taskIDStr := c.Param("task_id")
+	taskIDStr := c.Param("id")
 	taskID, err := primitive.ObjectIDFromHex(taskIDStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task_id format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format"})
 		return
 	}
 
