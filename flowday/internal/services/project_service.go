@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"flowday/internal/db"
+	"flowday/internal/dto"
 	"flowday/internal/models"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -79,6 +81,61 @@ func GetProjects(userID primitive.ObjectID) ([]models.Project, error) {
 	}
 
 	return ownedProjects, nil
+}
+
+// GetProjectsPaginated returns paginated projects for a user
+func GetProjectsPaginated(userID primitive.ObjectID, pagination dto.PaginationQuery) ([]models.Project, dto.PaginationMeta, error) {
+	// Validate and set defaults
+	pagination.ValidateAndSetDefaults()
+
+	// Get all projects (owned + member)
+	allProjects, err := GetProjects(userID)
+	if err != nil {
+		return nil, dto.PaginationMeta{}, err
+	}
+
+	total := int64(len(allProjects))
+
+	// Sort projects
+	sortField := pagination.Sort
+	if sortField == "" {
+		sortField = "created_at"
+	}
+
+	sort.Slice(allProjects, func(i, j int) bool {
+		switch sortField {
+		case "name":
+			if pagination.Order == "asc" {
+				return allProjects[i].Name < allProjects[j].Name
+			}
+			return allProjects[i].Name > allProjects[j].Name
+		case "created_at":
+			if pagination.Order == "asc" {
+				return allProjects[i].CreatedAt.Before(allProjects[j].CreatedAt)
+			}
+			return allProjects[i].CreatedAt.After(allProjects[j].CreatedAt)
+		default:
+			// Default to created_at desc
+			return allProjects[i].CreatedAt.After(allProjects[j].CreatedAt)
+		}
+	})
+
+	// Apply pagination
+	offset := pagination.GetOffset()
+	end := offset + pagination.Limit
+	if end > len(allProjects) {
+		end = len(allProjects)
+	}
+
+	if offset >= len(allProjects) {
+		return []models.Project{}, dto.NewPaginationMeta(pagination, total), nil
+	}
+
+	paginatedProjects := allProjects[offset:end]
+
+	meta := dto.NewPaginationMeta(pagination, total)
+
+	return paginatedProjects, meta, nil
 }
 
 func DeleteProject(userID, projectID primitive.ObjectID) error {

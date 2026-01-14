@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"flowday/internal/db"
+	"flowday/internal/dto"
 	"flowday/internal/models"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -59,6 +60,57 @@ func GetNotifications(userID primitive.ObjectID) ([]models.Notification, error) 
 	}
 
 	return notifications, nil
+}
+
+// GetNotificationsPaginated returns paginated notifications for a user
+func GetNotificationsPaginated(userID primitive.ObjectID, pagination dto.PaginationQuery) ([]models.Notification, dto.PaginationMeta, error) {
+	// Validate and set defaults
+	pagination.ValidateAndSetDefaults()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Lazy check: Verify due dates before fetching
+	_ = CheckDueDates(userID)
+
+	filter := bson.M{"user_id": userID}
+
+	// Get total count
+	total, err := db.Notifications.CountDocuments(ctx, filter)
+	if err != nil {
+		return nil, dto.PaginationMeta{}, fmt.Errorf("failed to count notifications: %w", err)
+	}
+
+	// Build sort order
+	sortOrder := -1 // desc (newest first by default)
+	if pagination.Order == "asc" {
+		sortOrder = 1
+	}
+	sortField := pagination.Sort
+	if sortField == "" {
+		sortField = "created_at"
+	}
+
+	// Build find options
+	findOptions := options.Find().
+		SetLimit(int64(pagination.Limit)).
+		SetSkip(int64(pagination.GetOffset())).
+		SetSort(bson.D{{Key: sortField, Value: sortOrder}})
+
+	cursor, err := db.Notifications.Find(ctx, filter, findOptions)
+	if err != nil {
+		return nil, dto.PaginationMeta{}, fmt.Errorf("failed to fetch notifications: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var notifications []models.Notification
+	if err = cursor.All(ctx, &notifications); err != nil {
+		return nil, dto.PaginationMeta{}, fmt.Errorf("failed to decode notifications: %w", err)
+	}
+
+	meta := dto.NewPaginationMeta(pagination, total)
+
+	return notifications, meta, nil
 }
 
 // MarkNotificationRead marks a specific notification as read

@@ -31,9 +31,24 @@ func CreateProject(c *gin.Context) {
 }
 
 func GetProjects(c *gin.Context) {
+	// Parse pagination query
+	var pagination dto.PaginationQuery
+	if err := c.ShouldBindQuery(&pagination); err != nil {
+		// If pagination params are not provided, use defaults
+		pagination = dto.PaginationQuery{}
+	}
+
 	userID, _ := c.Get("user_id")
-	projects, _ := services.GetProjects(userID.(primitive.ObjectID))
-	c.JSON(http.StatusOK, projects)
+	projects, meta, err := services.GetProjectsPaginated(userID.(primitive.ObjectID), pagination)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": projects,
+		"meta": meta,
+	})
 }
 
 func DeleteProject(c *gin.Context) {

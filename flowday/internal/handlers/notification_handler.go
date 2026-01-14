@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 
+	"flowday/internal/dto"
 	"flowday/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -17,13 +18,23 @@ func GetNotificationsHandler(c *gin.Context) {
 		return
 	}
 
-	notifications, err := services.GetNotifications(userID.(primitive.ObjectID))
+	// Parse pagination query
+	var pagination dto.PaginationQuery
+	if err := c.ShouldBindQuery(&pagination); err != nil {
+		// If pagination params are not provided, use defaults
+		pagination = dto.PaginationQuery{}
+	}
+
+	notifications, meta, err := services.GetNotificationsPaginated(userID.(primitive.ObjectID), pagination)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch notifications"})
 		return
 	}
 
-	c.JSON(http.StatusOK, notifications)
+	c.JSON(http.StatusOK, gin.H{
+		"data": notifications,
+		"meta": meta,
+	})
 }
 
 // MarkNotificationReadHandler handles PATCH /api/v1/notifications/:id/read
