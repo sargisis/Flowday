@@ -333,6 +333,36 @@ func UploadTaskAttachment(c *gin.Context) {
 		return
 	}
 
+	// ✅ SECURITY: Validate MIME type from Content-Type header
+	contentType := file.Header.Get("Content-Type")
+	// Allow common file types for task attachments (more permissive than avatars)
+	allowedMimeTypes := map[string]bool{
+		// Images
+		"image/jpeg":    true,
+		"image/jpg":     true,
+		"image/png":     true,
+		"image/gif":     true,
+		"image/webp":    true,
+		"image/svg+xml": true,
+		// Documents
+		"application/pdf":    true,
+		"application/msword": true,
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document": true,
+		"application/vnd.ms-excel": true,
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": true,
+		"text/plain": true,
+		"text/csv":   true,
+		// Archives
+		"application/zip":              true,
+		"application/x-zip-compressed": true,
+	}
+
+	// If Content-Type is provided, validate it
+	if contentType != "" && !allowedMimeTypes[contentType] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File type not allowed. Only images, documents, and archives are permitted"})
+		return
+	}
+
 	// ✅ SECURITY: Sanitize file extension
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	ext = strings.TrimPrefix(ext, ".")
@@ -342,9 +372,10 @@ func UploadTaskAttachment(c *gin.Context) {
 	dangerousExts := map[string]bool{
 		"exe": true, "bat": true, "cmd": true, "com": true, "pif": true,
 		"scr": true, "vbs": true, "js": true, "jar": true, "sh": true,
+		"php": true, "asp": true, "aspx": true, "jsp": true,
 	}
 	if dangerousExts[ext] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "File type not allowed"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File type not allowed. Executable files are prohibited"})
 		return
 	}
 

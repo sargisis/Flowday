@@ -13,18 +13,36 @@ import (
 func getSecret() []byte {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		log.Println("[WARNING] JWT_SECRET not set, using default key (INSECURE - for development only)")
-		return []byte("super-secret-key")
+		// ✅ SECURITY: In production, JWT_SECRET is required
+		if os.Getenv("GIN_MODE") == "release" {
+			log.Fatal("[CRITICAL] JWT_SECRET is required in production mode. Please set JWT_SECRET environment variable.")
+		}
+		log.Fatal("[CRITICAL] JWT_SECRET is required. Please set JWT_SECRET environment variable.")
 	}
+	
+	// ✅ SECURITY: Validate secret strength (minimum 32 characters)
+	if len(secret) < 32 {
+		log.Fatal("[CRITICAL] JWT_SECRET must be at least 32 characters long for security.")
+	}
+	
 	return []byte(secret)
 }
 
 func getRefreshSecret() []byte {
 	secret := os.Getenv("JWT_REFRESH_SECRET")
 	if secret == "" {
-		log.Println("[WARNING] JWT_REFRESH_SECRET not set, using default key (INSECURE - for development only)")
-		return []byte("super-secret-refresh-key")
+		// ✅ SECURITY: In production, JWT_REFRESH_SECRET is required
+		if os.Getenv("GIN_MODE") == "release" {
+			log.Fatal("[CRITICAL] JWT_REFRESH_SECRET is required in production mode. Please set JWT_REFRESH_SECRET environment variable.")
+		}
+		log.Fatal("[CRITICAL] JWT_REFRESH_SECRET is required. Please set JWT_REFRESH_SECRET environment variable.")
 	}
+	
+	// ✅ SECURITY: Validate secret strength (minimum 32 characters)
+	if len(secret) < 32 {
+		log.Fatal("[CRITICAL] JWT_REFRESH_SECRET must be at least 32 characters long for security.")
+	}
+	
 	return []byte(secret)
 }
 

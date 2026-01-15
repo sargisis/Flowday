@@ -24,17 +24,18 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 		c.JSON(http.StatusOK, gin.H{"user_id": userID})
 	})
 
-	// Generate valid token
+	// Set JWT_SECRET for test (minimum 32 characters required)
+	testSecret := "test-secret-key-for-testing-minimum-32-chars"
+	os.Setenv("JWT_SECRET", testSecret)
+	defer os.Unsetenv("JWT_SECRET")
+
+	// Generate valid token using the same secret
 	userID := primitive.NewObjectID()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": userID.Hex(),
 		"exp":     time.Now().Add(time.Hour).Unix(),
 	})
-	tokenString, _ := token.SignedString([]byte("test-secret-key"))
-
-	// Set JWT_SECRET for test
-	os.Setenv("JWT_SECRET", "test-secret-key")
-	defer os.Unsetenv("JWT_SECRET")
+	tokenString, _ := token.SignedString([]byte(testSecret))
 
 	// Make request
 	req := httptest.NewRequest("GET", "/protected", nil)
@@ -112,7 +113,8 @@ func TestAuthMiddleware_ExpiredToken(t *testing.T) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	os.Setenv("JWT_SECRET", "test-secret-key")
+	testSecret := "test-secret-key-for-testing-minimum-32-chars"
+	os.Setenv("JWT_SECRET", testSecret)
 	defer os.Unsetenv("JWT_SECRET")
 
 	// Generate expired token
@@ -121,7 +123,7 @@ func TestAuthMiddleware_ExpiredToken(t *testing.T) {
 		"user_id": userID.Hex(),
 		"exp":     time.Now().Add(-time.Hour).Unix(), // Expired
 	})
-	tokenString, _ := token.SignedString([]byte("test-secret-key"))
+	tokenString, _ := token.SignedString([]byte(testSecret))
 
 	req := httptest.NewRequest("GET", "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+tokenString)
@@ -139,7 +141,8 @@ func TestAuthMiddleware_InvalidUserID(t *testing.T) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	os.Setenv("JWT_SECRET", "test-secret-key")
+	testSecret := "test-secret-key-for-testing-minimum-32-chars"
+	os.Setenv("JWT_SECRET", testSecret)
 	defer os.Unsetenv("JWT_SECRET")
 
 	// Generate token with invalid user_id (not ObjectID format)
@@ -147,7 +150,7 @@ func TestAuthMiddleware_InvalidUserID(t *testing.T) {
 		"user_id": "invalid-id-format",
 		"exp":     time.Now().Add(time.Hour).Unix(),
 	})
-	tokenString, _ := token.SignedString([]byte("test-secret-key"))
+	tokenString, _ := token.SignedString([]byte(testSecret))
 
 	req := httptest.NewRequest("GET", "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+tokenString)
