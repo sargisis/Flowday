@@ -34,8 +34,23 @@ func Setup(r *gin.Engine) {
 		protected.POST("/users/email-change/request", handlers.RequestEmailChange)
 		protected.POST("/users/change-email/verify", handlers.ConfirmEmailChange)
 		protected.PATCH("/users/status", handlers.UpdateStatus)
+		protected.PATCH("/users/notifications", handlers.UpdateNotificationSettings)
+		protected.POST("/users/notifications/test-slack", handlers.TestSlackWebhook)
 		protected.GET("/users/:id", handlers.GetUserByID)
+
+		// Slack OAuth Integration
+		protected.GET("/slack/oauth/initiate", handlers.InitiateSlackOAuth)
+		protected.POST("/slack/disconnect", handlers.DisconnectSlack)
+		protected.GET("/slack/channels", handlers.GetSlackChannels)
+		protected.PATCH("/slack/channel", handlers.UpdateSlackChannel)
+		protected.POST("/slack/test", handlers.TestSlackOAuth)
 	}
+
+	// Public Slack OAuth callback (no auth required)
+	v1.GET("/slack/oauth/callback", handlers.HandleSlackOAuthCallback)
+
+	// Public Slack Interactivity endpoint (no auth required - Slack sends requests directly)
+	v1.POST("/slack/interactivity", handlers.HandleSlackInteractivity)
 
 	// Serve static files for uploads
 	r.Static("/api/v1/uploads", "./uploads")

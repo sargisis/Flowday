@@ -8,6 +8,7 @@ import (
 	"flowday/internal/models"
 	"flowday/internal/utils"
 	"fmt"
+	"log"
 	"math/big"
 	"net/http"
 	"os"
@@ -310,4 +311,127 @@ func GetUserByID(c *gin.Context) {
 		"avatar_url": user.AvatarURL,
 		"status":     user.Status,
 	})
+}
+
+type UpdateNotificationSettingsRequest struct {
+	EmailNotifications *bool  `json:"email_notifications,omitempty"`
+	SlackWebhookURL    *string `json:"slack_webhook_url,omitempty"`
+}
+
+func UpdateNotificationSettings(c *gin.Context) {
+	val, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	userID := val.(primitive.ObjectID)
+
+	var req UpdateNotificationSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	update := bson.M{
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+
+	if req.EmailNotifications != nil {
+		update["$set"].(bson.M)["email_notifications"] = *req.EmailNotifications
+	}
+
+	// Update Slack webhook URL if provided
+	if req.SlackWebhookURL != nil {
+		if *req.SlackWebhookURL == "" {
+			// Empty string means clear the webhook (disable integration)
+			update["$set"].(bson.M)["slack_webhook_url"] = ""
+		} else {
+			// Basic validation for Slack webhook URL
+			if !strings.HasPrefix(*req.SlackWebhookURL, "https://hooks.slack.com/") {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Slack webhook URL format. Must start with https://hooks.slack.com/"})
+				return
+			}
+			update["$set"].(bson.M)["slack_webhook_url"] = *req.SlackWebhookURL
+		}
+	}
+
+	_, err := db.Users.UpdateOne(context.Background(), bson.M{"_id": userID}, update)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update notification settings"})
+		return
+	}
+
+	// Return updated settings
+	var user models.User
+	err = db.Users.FindOne(context.Background(), bson.M{"_id": userID}).Decode(&user)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "Settings updated successfully"})
+		return
+	}
+
+	// Test webhook if it was just added
+	if req.SlackWebhookURL != nil && *req.SlackWebhookURL != "" {
+		go func() {
+			if err := utils.TestSlackWebhook(*req.SlackWebhookURL); err != nil {
+				log.Printf("Failed to send test Slack notification: %v", err)
+			}
+		}()
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":             "Notification settings updated successfully",
+		"email_notifications": user.EmailNotifications,
+		"slack_webhook_url":    user.SlackWebhookURL,
+	})
+}
+
+type TestSlackWebhookRequest struct {
+	WebhookURL string `json:"webhook_url,omitempty"`
+}
+
+func TestSlackWebhook(c *gin.Context) {
+	val, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	userID := val.(primitive.ObjectID)
+
+	var req TestSlackWebhookRequest
+	var webhookURL string
+
+	// Check if webhook URL is provided in request body (for testing before saving)
+	if err := c.ShouldBindJSON(&req); err == nil && req.WebhookURL != "" {
+		webhookURL = req.WebhookURL
+		// Validate format
+		if !strings.HasPrefix(webhookURL, "https://hooks.slack.com/services/") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Slack webhook URL format"})
+			return
+		}
+	} else {
+		// Use saved webhook URL from user
+		var user models.User
+		err := db.Users.FindOne(context.Background(), bson.M{"_id": userID}).Decode(&user)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+			return
+		}
+
+		if user.SlackWebhookURL == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Slack webhook URL is not configured"})
+			return
+		}
+		webhookURL = user.SlackWebhookURL
+	}
+
+	// Send test notification
+	err := utils.TestSlackWebhook(webhookURL)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send test notification: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Test notification sent successfully! Check your Slack channel."})
 }

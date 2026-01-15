@@ -38,14 +38,16 @@ func Register(name, email, password string) (*models.User, error) {
 	}
 
 	user := models.User{
-		ID:        primitive.NewObjectID(),
-		Name:      name,
-		Email:     email,
-		Password:  hashed,
-		XP:        0,
-		Level:     1,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:                 primitive.NewObjectID(),
+		Name:               name,
+		Email:              email,
+		Password:           hashed,
+		XP:                 0,
+		Level:              1,
+		EmailNotifications: false, // Default: disabled
+		SlackWebhookURL:    "",     // Default: empty
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 
 	_, err = db.Users.InsertOne(ctx, user)
