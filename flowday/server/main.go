@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"flowday/internal/db"
+	"flowday/internal/middleware"
 	"flowday/internal/router"
 	"flowday/internal/services"
 	"flowday/internal/worker"
@@ -36,6 +37,9 @@ func main() {
 	worker.StartAnalyzer()
 
 	r := gin.Default()
+
+	// Skip ngrok browser warning for all requests
+	r.Use(middleware.NgrokSkipWarning())
 
 	// ✅ SECURITY: CORS configuration - support both development and production
 	r.Use(cors.New(cors.Config{

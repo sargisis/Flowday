@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,11 +10,14 @@ import (
 	"strings"
 	"time"
 
+	"flowday/internal/db"
 	"flowday/internal/dto"
 	"flowday/internal/models"
 	"flowday/internal/services"
+	"flowday/internal/utils"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -56,6 +60,30 @@ func CreateTask(c *gin.Context) {
 	}
 
 	services.LogActivity(userID.(primitive.ObjectID), models.ActivityTaskCreated, "Created task: "+task.Title, map[string]string{"task_id": task.ID.Hex()})
+
+	// Send Slack notification (OAuth preferred, fallback to webhook)
+	go func() {
+		var user models.User
+		if err := db.Users.FindOne(context.Background(), bson.M{"_id": userID}).Decode(&user); err == nil {
+			var project models.Project
+			if err := db.Projects.FindOne(context.Background(), bson.M{"_id": projectID}).Decode(&project); err == nil {
+				// Try OAuth first
+				if user.SlackAccessToken != "" {
+					// Send to channel if configured
+					if user.SlackChannelID != "" {
+						utils.SendTaskNotificationOAuth(user.SlackAccessToken, user.SlackChannelID, task.Title, "created", project.Name, task.Priority, task.Status, "", task.ID.Hex())
+					}
+					// Also send DM to user if Slack User ID is available
+					if user.SlackUserID != "" {
+						utils.SendTaskNotificationOAuth(user.SlackAccessToken, "", task.Title, "created", project.Name, task.Priority, task.Status, user.SlackUserID, task.ID.Hex())
+					}
+				} else if user.SlackWebhookURL != "" {
+					// Fallback to webhook
+					utils.SendTaskNotification(user.SlackWebhookURL, task.Title, "created", project.Name, task.Priority, task.Status)
+				}
+			}
+		}
+	}() // This fixed the "expression in go must be function call" lint error by calling the goroutine properly.
 
 	c.JSON(http.StatusCreated, task)
 }
@@ -126,13 +154,45 @@ func UpdateTask(c *gin.Context) {
 		return
 	}
 
+	// Get updated task for notifications
+	task, _ := services.GetTask(userID.(primitive.ObjectID), taskID)
+
 	// Trigger achievement/streak check on any update (activity)
 	go services.CheckAndAwardAchievements(userID.(primitive.ObjectID), "task_updated", map[string]interface{}{
 		"updated_at": time.Now(),
 	})
 
+	// Send Slack notification (OAuth preferred, fallback to webhook)
+	if task != nil {
+		go func() {
+			var user models.User
+			if err := db.Users.FindOne(context.Background(), bson.M{"_id": userID}).Decode(&user); err == nil {
+				var project models.Project
+				if err := db.Projects.FindOne(context.Background(), bson.M{"_id": task.ProjectID}).Decode(&project); err == nil {
+					action := "updated"
+					if req.Status != nil && strings.ToLower(*req.Status) == "done" {
+						action = "completed"
+					}
+					// Try OAuth first
+					if user.SlackAccessToken != "" {
+						// Send to channel if configured
+						if user.SlackChannelID != "" {
+							utils.SendTaskNotificationOAuth(user.SlackAccessToken, user.SlackChannelID, task.Title, action, project.Name, task.Priority, task.Status, "", task.ID.Hex())
+						}
+						// Also send DM to user if Slack User ID is available
+						if user.SlackUserID != "" {
+							utils.SendTaskNotificationOAuth(user.SlackAccessToken, "", task.Title, action, project.Name, task.Priority, task.Status, user.SlackUserID, task.ID.Hex())
+						}
+					} else if user.SlackWebhookURL != "" {
+						// Fallback to webhook
+						utils.SendTaskNotification(user.SlackWebhookURL, task.Title, action, project.Name, task.Priority, task.Status)
+					}
+				}
+			}
+		}()
+	}
+
 	if req.Status != nil && (strings.ToLower(*req.Status) == "done") {
-		task, _ := services.GetTask(userID.(primitive.ObjectID), taskID)
 		if task != nil {
 			services.LogActivity(userID.(primitive.ObjectID), models.ActivityTaskCompleted, "Completed task: "+task.Title, map[string]string{"task_id": task.ID.Hex()})
 
