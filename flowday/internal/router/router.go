@@ -3,13 +3,28 @@ package router
 import (
 	"flowday/internal/auth"
 	"flowday/internal/handlers"
+	"flowday/internal/logger"
 	"flowday/internal/middleware"
-	"log"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func Setup(r *gin.Engine) {
+	// ✅ STABILITY: Health check endpoints (no auth required)
+	r.GET("/health", handlers.HealthCheckHandler)
+	r.GET("/ready", handlers.ReadinessCheckHandler)
+	r.GET("/live", handlers.LivenessCheckHandler)
+
+	// ✅ METRICS: Prometheus metrics endpoint
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
+	// ✅ DOCUMENTATION: Swagger/OpenAPI documentation
+	// Swagger UI will be available at /swagger/index.html
+	// JSON spec at /swagger/doc.json
+	// Note: Requires swag init to generate docs
+	// r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	v1 := r.Group("/api/v1")
 
 	// ---------- AUTH ----------
@@ -52,8 +67,9 @@ func Setup(r *gin.Engine) {
 	// Public Slack Interactivity endpoint (no auth required - Slack sends requests directly)
 	v1.POST("/slack/interactivity", handlers.HandleSlackInteractivity)
 
-	// Serve static files for uploads
-	r.Static("/api/v1/uploads", "./uploads")
+	// ✅ SECURITY: Serve static files with authorization check (instead of public access)
+	// Protected uploads endpoint - requires authentication
+	protected.GET("/uploads/*filepath", handlers.ServeUploadedFile)
 
 	// ---------- PROJECTS ----------
 	projectsGroup := v1.Group("/projects")
@@ -183,6 +199,6 @@ func Setup(r *gin.Engine) {
 
 	// Log all routes
 	for _, route := range r.Routes() {
-		log.Printf("Route: %s %s", route.Method, route.Path)
+		logger.Log.Infof("Route: %s %s", route.Method, route.Path)
 	}
 }

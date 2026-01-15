@@ -56,19 +56,41 @@ func UploadAttachment(c *gin.Context) {
 		return
 	}
 
+	// ✅ SECURITY: Validate MIME type from Content-Type header
+	contentType := file.Header.Get("Content-Type")
+	// Allow common file types for message attachments
+	allowedMimeTypes := map[string]bool{
+		// Images
+		"image/jpeg": true,
+		"image/jpg":  true,
+		"image/png":  true,
+		"image/gif":  true,
+		"image/webp": true,
+		// Documents
+		"application/pdf": true,
+		"text/plain":      true,
+	}
+
+	// If Content-Type is provided, validate it
+	if contentType != "" && !allowedMimeTypes[contentType] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File type not allowed. Only images and documents are permitted"})
+		return
+	}
+
 	// ✅ SECURITY: Sanitize file extension
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	// Remove any path traversal attempts
 	ext = strings.TrimPrefix(ext, ".")
 	ext = strings.Trim(ext, "/\\")
-	
+
 	// Basic extension validation - prevent executable files
 	dangerousExts := map[string]bool{
 		"exe": true, "bat": true, "cmd": true, "com": true, "pif": true,
 		"scr": true, "vbs": true, "js": true, "jar": true, "sh": true,
+		"php": true, "asp": true, "aspx": true, "jsp": true,
 	}
 	if dangerousExts[ext] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "File type not allowed"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File type not allowed. Executable files are prohibited"})
 		return
 	}
 

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -84,12 +85,27 @@ func UploadAvatar(c *gin.Context) {
 		return
 	}
 
+	// ✅ SECURITY: Validate MIME type from Content-Type header
+	contentType := file.Header.Get("Content-Type")
+	allowedMimeTypes := map[string]bool{
+		"image/jpeg": true,
+		"image/jpg":  true,
+		"image/png":  true,
+		"image/gif":  true,
+		"image/webp": true,
+	}
+
+	if contentType == "" || !allowedMimeTypes[contentType] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type. Only JPG, JPEG, PNG, GIF, and WEBP images are allowed"})
+		return
+	}
+
 	// ✅ SECURITY: Validate file extension and sanitize
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	// Remove any path traversal attempts
 	ext = strings.TrimPrefix(ext, ".")
 	ext = strings.Trim(ext, "/\\")
-	
+
 	// Allowed image extensions
 	allowedExts := map[string]bool{
 		"jpg":  true,
@@ -98,10 +114,21 @@ func UploadAvatar(c *gin.Context) {
 		"gif":  true,
 		"webp": true,
 	}
-	
+
 	if ext == "" || !allowedExts[ext] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type. Only JPG, JPEG, PNG, GIF, and WEBP are allowed"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file extension. Only JPG, JPEG, PNG, GIF, and WEBP are allowed"})
 		return
+	}
+
+	// ✅ SECURITY: Verify MIME type matches extension
+	detectedMimeType := mime.TypeByExtension("." + ext)
+	if detectedMimeType != "" && !strings.HasPrefix(detectedMimeType, contentType) {
+		// Allow some flexibility (e.g., image/jpeg vs image/jpg)
+		if !(contentType == "image/jpg" && detectedMimeType == "image/jpeg") &&
+			!(contentType == "image/jpeg" && detectedMimeType == "image/jpg") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "File extension does not match file type"})
+			return
+		}
 	}
 
 	// Create uploads directory if not exists
@@ -314,7 +341,7 @@ func GetUserByID(c *gin.Context) {
 }
 
 type UpdateNotificationSettingsRequest struct {
-	EmailNotifications *bool  `json:"email_notifications,omitempty"`
+	EmailNotifications *bool   `json:"email_notifications,omitempty"`
 	SlackWebhookURL    *string `json:"slack_webhook_url,omitempty"`
 }
 
@@ -383,7 +410,7 @@ func UpdateNotificationSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":             "Notification settings updated successfully",
 		"email_notifications": user.EmailNotifications,
-		"slack_webhook_url":    user.SlackWebhookURL,
+		"slack_webhook_url":   user.SlackWebhookURL,
 	})
 }
 
