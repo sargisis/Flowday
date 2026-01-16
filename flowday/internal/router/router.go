@@ -120,6 +120,11 @@ func Setup(r *gin.Engine) {
 		tasksGroup.POST("/:id/decompose", handlers.DecomposeTask)
 		tasksGroup.POST("/:id/enrich", handlers.EnrichTask)
 
+		// ✅ NEW: Task Dependencies (must be before generic :id routes)
+		tasksGroup.POST("/:id/dependencies", handlers.AddTaskDependency)
+		tasksGroup.DELETE("/:id/dependencies", handlers.RemoveTaskDependency)
+		tasksGroup.GET("/:id/dependencies", handlers.GetTaskDependencies)
+
 		// Generic task operations (keep at the end)
 		tasksGroup.PATCH("/:id", handlers.UpdateTask)
 		tasksGroup.DELETE("/:id", handlers.DeleteTask)
@@ -200,6 +205,21 @@ func Setup(r *gin.Engine) {
 		timeGroup.GET("/entries", handlers.GetTimeEntries)
 		timeGroup.DELETE("/entries/:id", handlers.DeleteTimeEntry)
 		timeGroup.GET("/report", handlers.GetTimeReport)
+	}
+
+	// ✅ NEW FEATURES: Export/Import
+	exportGroup := v1.Group("/export")
+	exportGroup.Use(middleware.AuthMiddleware())
+	{
+		exportGroup.GET("/tasks/csv", handlers.ExportTasksCSV)
+		exportGroup.GET("/tasks/json", handlers.ExportTasksJSON)
+	}
+
+	importGroup := v1.Group("/import")
+	importGroup.Use(middleware.AuthMiddleware())
+	{
+		importGroup.POST("/tasks/csv", handlers.ImportTasksCSV)
+		importGroup.POST("/tasks/json", handlers.ImportTasksJSON)
 	}
 
 	// ---------- ACHIEVEMENTS & STREAKS ----------
