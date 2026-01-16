@@ -53,6 +53,7 @@ func main() {
 
 	// Start Background Workers
 	worker.StartAnalyzer()
+	worker.StartRecurringTasksProcessor() // ✅ NEW: Process recurring tasks
 
 	// ✅ PERFORMANCE: Initialize Redis rate limiter (if available)
 	if err := middleware.InitRedisRateLimiter(); err != nil {

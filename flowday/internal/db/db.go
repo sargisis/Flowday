@@ -32,6 +32,10 @@ var (
 	Messages            *mongo.Collection
 	RefreshTokens       *mongo.Collection
 	Comments            *mongo.Collection
+	// ✅ NEW COLLECTIONS
+	TaskTemplates *mongo.Collection
+	SavedViews    *mongo.Collection
+	TimeEntries   *mongo.Collection
 )
 
 func Connect() {
@@ -80,6 +84,10 @@ func Connect() {
 	Messages = Database.Collection("messages")
 	RefreshTokens = Database.Collection("refresh_tokens")
 	Comments = Database.Collection("comments")
+	// ✅ NEW COLLECTIONS
+	TaskTemplates = Database.Collection("task_templates")
+	SavedViews = Database.Collection("saved_views")
+	TimeEntries = Database.Collection("time_entries")
 
 	// ✅ PERFORMANCE: Create indexes for faster queries
 	if err := createIndexes(ctx); err != nil {
@@ -253,6 +261,60 @@ func createIndexes(ctx context.Context) error {
 		{Keys: bson.D{{Key: "last_activity_date", Value: 1}}},
 	}
 	if _, err := UserStreaks.Indexes().CreateMany(ctx, userStreaksIndexes); err != nil {
+		return err
+	}
+
+	// ✅ NEW INDEXES
+
+	// TaskTemplates collection indexes
+	taskTemplatesIndexes := []mongo.IndexModel{
+		{Keys: bson.D{{Key: "user_id", Value: 1}}},
+		{Keys: bson.D{{Key: "project_id", Value: 1}}},
+		{Keys: bson.D{{Key: "created_at", Value: -1}}},
+		// Compound index: user_id + project_id
+		{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "project_id", Value: 1}}},
+	}
+	if _, err := TaskTemplates.Indexes().CreateMany(ctx, taskTemplatesIndexes); err != nil {
+		return err
+	}
+
+	// SavedViews collection indexes
+	savedViewsIndexes := []mongo.IndexModel{
+		{Keys: bson.D{{Key: "user_id", Value: 1}}},
+		{Keys: bson.D{{Key: "project_id", Value: 1}}},
+		{Keys: bson.D{{Key: "created_at", Value: -1}}},
+		// Compound index: user_id + project_id
+		{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "project_id", Value: 1}}},
+	}
+	if _, err := SavedViews.Indexes().CreateMany(ctx, savedViewsIndexes); err != nil {
+		return err
+	}
+
+	// TimeEntries collection indexes
+	timeEntriesIndexes := []mongo.IndexModel{
+		{Keys: bson.D{{Key: "user_id", Value: 1}}},
+		{Keys: bson.D{{Key: "task_id", Value: 1}}},
+		{Keys: bson.D{{Key: "start_time", Value: -1}}},
+		// Compound index: task_id + start_time
+		{Keys: bson.D{{Key: "task_id", Value: 1}, {Key: "start_time", Value: -1}}},
+		// Compound index: user_id + start_time
+		{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "start_time", Value: -1}}},
+	}
+	if _, err := TimeEntries.Indexes().CreateMany(ctx, timeEntriesIndexes); err != nil {
+		return err
+	}
+
+	// Additional indexes for Tasks collection (new fields)
+	additionalTaskIndexes := []mongo.IndexModel{
+		{Keys: bson.D{{Key: "assignee_id", Value: 1}}},
+		{Keys: bson.D{{Key: "is_recurring", Value: 1}}},
+		{Keys: bson.D{{Key: "depends_on", Value: 1}}},
+		{Keys: bson.D{{Key: "blocks", Value: 1}}},
+		{Keys: bson.D{{Key: "template_id", Value: 1}}},
+		// Compound index: project_id + assignee_id + status
+		{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "assignee_id", Value: 1}, {Key: "status", Value: 1}}},
+	}
+	if _, err := Tasks.Indexes().CreateMany(ctx, additionalTaskIndexes); err != nil {
 		return err
 	}
 
