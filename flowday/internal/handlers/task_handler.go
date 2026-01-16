@@ -15,6 +15,7 @@ import (
 	"flowday/internal/models"
 	"flowday/internal/services"
 	"flowday/internal/utils"
+	"flowday/internal/websocket"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -60,6 +61,34 @@ func CreateTask(c *gin.Context) {
 	}
 
 	services.LogActivity(userID.(primitive.ObjectID), models.ActivityTaskCreated, "Created task: "+task.Title, map[string]string{"task_id": task.ID.Hex()})
+
+	// ✅ REAL-TIME: Broadcast task creation via WebSocket
+	go func() {
+		// Get project owner and members for broadcast
+		var project models.Project
+		if err := db.Projects.FindOne(context.Background(), bson.M{"_id": projectID}).Decode(&project); err == nil {
+			userIDs := []primitive.ObjectID{project.UserID}
+			// Get project members
+			cursor, _ := db.ProjectMembers.Find(context.Background(), bson.M{
+				"project_id": projectID,
+				"status":     "accepted",
+			})
+			var members []models.ProjectMember
+			cursor.All(context.Background(), &members)
+			for _, member := range members {
+				userIDs = append(userIDs, member.UserID)
+			}
+			// Broadcast to all project members
+			taskData := map[string]interface{}{
+				"task_id":    task.ID.Hex(),
+				"title":      task.Title,
+				"project_id": projectID.Hex(),
+				"status":     task.Status,
+				"priority":   task.Priority,
+			}
+			websocket.BroadcastTaskCreate(userIDs, taskData)
+		}
+	}()
 
 	// Send Slack notification (OAuth preferred, fallback to webhook)
 	go func() {
@@ -157,6 +186,37 @@ func UpdateTask(c *gin.Context) {
 	// Get updated task for notifications
 	task, _ := services.GetTask(userID.(primitive.ObjectID), taskID)
 
+	// ✅ REAL-TIME: Broadcast task update via WebSocket
+	go func() {
+		if task != nil {
+			// Get project owner and members for broadcast
+			var project models.Project
+			if err := db.Projects.FindOne(context.Background(), bson.M{"_id": task.ProjectID}).Decode(&project); err == nil {
+				userIDs := []primitive.ObjectID{project.UserID}
+				// Get project members
+				cursor, _ := db.ProjectMembers.Find(context.Background(), bson.M{
+					"project_id": task.ProjectID,
+					"status":     "accepted",
+				})
+				var members []models.ProjectMember
+				cursor.All(context.Background(), &members)
+				for _, member := range members {
+					userIDs = append(userIDs, member.UserID)
+				}
+				// Broadcast to all project members
+				taskData := map[string]interface{}{
+					"task_id":    task.ID.Hex(),
+					"title":      task.Title,
+					"project_id": task.ProjectID.Hex(),
+					"status":     task.Status,
+					"priority":   task.Priority,
+					"updates":    updates,
+				}
+				websocket.BroadcastTaskUpdate(userIDs, taskData)
+			}
+		}
+	}()
+
 	// Trigger achievement/streak check on any update (activity)
 	go services.CheckAndAwardAchievements(userID.(primitive.ObjectID), "task_updated", map[string]interface{}{
 		"updated_at": time.Now(),
@@ -215,6 +275,14 @@ func DeleteTask(c *gin.Context) {
 	}
 
 	userID, _ := c.Get("user_id")
+
+	// Get task info before deletion for WebSocket broadcast
+	var task models.Task
+	var projectID primitive.ObjectID
+	if err := db.Tasks.FindOne(context.Background(), bson.M{"_id": taskID}).Decode(&task); err == nil {
+		projectID = task.ProjectID
+	}
+
 	if err := services.DeleteTask(userID.(primitive.ObjectID), taskID); err != nil {
 		log.Printf("[DeleteTask] Error: %v", err)
 		if err.Error() == "task not found" || err.Error() == "project not found" {
@@ -224,6 +292,29 @@ func DeleteTask(c *gin.Context) {
 		}
 		return
 	}
+
+	// ✅ REAL-TIME: Broadcast task deletion via WebSocket
+	go func() {
+		if !projectID.IsZero() {
+			// Get project owner and members for broadcast
+			var project models.Project
+			if err := db.Projects.FindOne(context.Background(), bson.M{"_id": projectID}).Decode(&project); err == nil {
+				userIDs := []primitive.ObjectID{project.UserID}
+				// Get project members
+				cursor, _ := db.ProjectMembers.Find(context.Background(), bson.M{
+					"project_id": projectID,
+					"status":     "accepted",
+				})
+				var members []models.ProjectMember
+				cursor.All(context.Background(), &members)
+				for _, member := range members {
+					userIDs = append(userIDs, member.UserID)
+				}
+				// Broadcast to all project members
+				websocket.BroadcastTaskDelete(userIDs, taskID.Hex())
+			}
+		}
+	}()
 
 	c.Status(http.StatusNoContent)
 }

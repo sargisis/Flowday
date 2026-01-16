@@ -5,6 +5,7 @@ import (
 	"flowday/internal/handlers"
 	"flowday/internal/logger"
 	"flowday/internal/middleware"
+	"flowday/internal/websocket"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -18,6 +19,11 @@ func Setup(r *gin.Engine) {
 
 	// ✅ METRICS: Prometheus metrics endpoint
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
+	// ✅ REAL-TIME: WebSocket endpoint for real-time updates
+	// Protected WebSocket connection - authentication handled in handler
+	// Token can be passed via query parameter (?token=...) or Authorization header
+	r.GET("/ws/connect", websocket.HandleWebSocket)
 
 	// ✅ DOCUMENTATION: Swagger/OpenAPI documentation
 	// Swagger UI will be available at /swagger/index.html
@@ -67,9 +73,11 @@ func Setup(r *gin.Engine) {
 	// Public Slack Interactivity endpoint (no auth required - Slack sends requests directly)
 	v1.POST("/slack/interactivity", handlers.HandleSlackInteractivity)
 
-	// ✅ SECURITY: Serve static files with authorization check (instead of public access)
-	// Protected uploads endpoint - requires authentication
-	protected.GET("/uploads/*filepath", handlers.ServeUploadedFile)
+	// ✅ FILES: Serve uploaded files
+	// Public access for avatars (simpler - no auth needed)
+	v1.GET("/uploads/*filepath", handlers.ServePublicFile)
+	// Protected files (task/message attachments) - use different path if needed
+	// protected.GET("/uploads/attachments/*filepath", handlers.ServeUploadedFile)
 
 	// ---------- PROJECTS ----------
 	projectsGroup := v1.Group("/projects")

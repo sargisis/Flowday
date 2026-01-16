@@ -146,7 +146,7 @@ func UploadAvatar(c *gin.Context) {
 		return
 	}
 
-	// Update user's avatar URL
+	// Update user's avatar URL - use simple path for public access
 	avatarURL := fmt.Sprintf("/api/v1/uploads/%s", filename)
 	_, err = db.Users.UpdateOne(context.Background(), bson.M{"_id": userID}, bson.M{
 		"$set": bson.M{

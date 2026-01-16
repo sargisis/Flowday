@@ -15,6 +15,7 @@ import (
 	"flowday/internal/middleware"
 	"flowday/internal/router"
 	"flowday/internal/services"
+	"flowday/internal/websocket"
 	"flowday/internal/worker"
 
 	"github.com/gin-contrib/cors"
@@ -35,6 +36,9 @@ func main() {
 
 	// ✅ PERFORMANCE: Initialize cache
 	cache.Init()
+
+	// ✅ REAL-TIME: Initialize WebSocket hub
+	websocket.InitHub()
 
 	db.Connect()
 
@@ -75,6 +79,47 @@ func main() {
 	// ✅ TRACING: Add request ID for request tracing
 	r.Use(middleware.RequestIDMiddleware())
 
+	// ✅ SECURITY: CORS configuration - MUST be before rate limiting to allow OPTIONS preflight
+	// Support both development and production
+	r.Use(cors.New(cors.Config{
+		AllowOriginFunc: func(origin string) bool {
+			// Allow empty origin (for file:// protocol, mobile apps, Postman, etc.)
+			if origin == "" {
+				return true
+			}
+
+			// Development: allow localhost (all ports)
+			if strings.HasPrefix(origin, "http://localhost") ||
+				strings.HasPrefix(origin, "http://127.0.0.1") ||
+				strings.HasPrefix(origin, "file://") {
+				return true
+			}
+
+			// Production: check ALLOWED_ORIGINS environment variable
+			allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
+			if allowedOrigins == "" {
+				// If not set, default to localhost only (safe default)
+				return false
+			}
+
+			// Parse comma-separated list of allowed origins
+			origins := strings.Split(allowedOrigins, ",")
+			for _, allowed := range origins {
+				allowed = strings.TrimSpace(allowed)
+				if origin == allowed {
+					return true
+				}
+			}
+
+			return false
+		},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Cookie", "X-Requested-With"},
+		ExposeHeaders:    []string{"Content-Length", "Set-Cookie", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
 	// ✅ METRICS: Add Prometheus metrics collection
 	r.Use(middleware.MetricsMiddleware())
 
@@ -114,40 +159,6 @@ func main() {
 
 	// Skip ngrok browser warning for all requests
 	r.Use(middleware.NgrokSkipWarning())
-
-	// ✅ SECURITY: CORS configuration - support both development and production
-	r.Use(cors.New(cors.Config{
-		AllowOriginFunc: func(origin string) bool {
-			// Development: allow localhost
-			if strings.HasPrefix(origin, "http://localhost") ||
-				strings.HasPrefix(origin, "http://127.0.0.1") {
-				return true
-			}
-
-			// Production: check ALLOWED_ORIGINS environment variable
-			allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
-			if allowedOrigins == "" {
-				// If not set, default to localhost only (safe default)
-				return false
-			}
-
-			// Parse comma-separated list of allowed origins
-			origins := strings.Split(allowedOrigins, ",")
-			for _, allowed := range origins {
-				allowed = strings.TrimSpace(allowed)
-				if origin == allowed {
-					return true
-				}
-			}
-
-			return false
-		},
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Cookie"},
-		ExposeHeaders:    []string{"Content-Length", "Set-Cookie"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	}))
 
 	router.Setup(r)
 
