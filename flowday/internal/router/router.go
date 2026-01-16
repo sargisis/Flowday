@@ -168,6 +168,40 @@ func Setup(r *gin.Engine) {
 		activityGroup.GET("", handlers.GetActivityFeed)
 	}
 
+	// ✅ NEW FEATURES: Task Templates
+	templatesGroup := v1.Group("/templates")
+	templatesGroup.Use(middleware.AuthMiddleware())
+	{
+		templatesGroup.POST("", handlers.CreateTaskTemplate)
+		templatesGroup.GET("", handlers.GetTaskTemplates)
+		templatesGroup.GET("/:id", handlers.GetTaskTemplate)
+		templatesGroup.PATCH("/:id", handlers.UpdateTaskTemplate)
+		templatesGroup.DELETE("/:id", handlers.DeleteTaskTemplate)
+		templatesGroup.POST("/:id/create-task", handlers.CreateTaskFromTemplate)
+	}
+
+	// ✅ NEW FEATURES: Saved Views
+	viewsGroup := v1.Group("/views")
+	viewsGroup.Use(middleware.AuthMiddleware())
+	{
+		viewsGroup.POST("", handlers.CreateSavedView)
+		viewsGroup.GET("", handlers.GetSavedViews)
+		viewsGroup.GET("/:id", handlers.GetSavedView)
+		viewsGroup.PATCH("/:id", handlers.UpdateSavedView)
+		viewsGroup.DELETE("/:id", handlers.DeleteSavedView)
+	}
+
+	// ✅ NEW FEATURES: Time Tracking
+	timeGroup := v1.Group("/time")
+	timeGroup.Use(middleware.AuthMiddleware())
+	{
+		timeGroup.POST("/start", handlers.StartTimeEntry)
+		timeGroup.POST("/stop", handlers.StopTimeEntry)
+		timeGroup.GET("/entries", handlers.GetTimeEntries)
+		timeGroup.DELETE("/entries/:id", handlers.DeleteTimeEntry)
+		timeGroup.GET("/report", handlers.GetTimeReport)
+	}
+
 	// ---------- ACHIEVEMENTS & STREAKS ----------
 	achievementGroup := v1.Group("/achievements")
 	achievementGroup.Use(middleware.AuthMiddleware())
