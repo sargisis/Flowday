@@ -83,6 +83,40 @@ func GenerateTokens(userID primitive.ObjectID) (string, string, error) {
 	return accessToken, refreshToken, nil
 }
 
+// ValidateAccessToken validates an access token and returns the user ID
+func ValidateAccessToken(tokenStr string) (string, error) {
+	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+		// ✅ SECURITY: Validate signing method to prevent algorithm confusion attacks
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return getSecret(), nil
+	})
+
+	if err != nil || !token.Valid {
+		return "", err
+	}
+
+	// ✅ SECURITY: Safe type assertion with error handling
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", jwt.ErrTokenInvalidClaims
+	}
+
+	// Check token type
+	if claims["type"] != "access" {
+		return "", jwt.ErrTokenInvalidClaims
+	}
+
+	// ✅ SECURITY: Safe type assertion for user_id
+	userIDStr, ok := claims["user_id"].(string)
+	if !ok {
+		return "", jwt.ErrTokenInvalidClaims
+	}
+
+	return userIDStr, nil
+}
+
 func ValidateRefreshToken(tokenStr string) (string, error) {
 	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
 		// ✅ SECURITY: Validate signing method to prevent algorithm confusion attacks

@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"flowday/internal/dto"
+	"flowday/internal/logger"
 	"flowday/internal/services"
+	"flowday/internal/websocket"
 	"fmt"
 	"net/http"
 	"os"
@@ -38,6 +40,27 @@ func SendMessage(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// ✅ REAL-TIME: Send WebSocket notification to receiver
+	messagePayload := map[string]interface{}{
+		"id":              msg.ID.Hex(),
+		"sender_id":       msg.SenderID.Hex(),
+		"receiver_id":     msg.ReceiverID.Hex(),
+		"content":         msg.Content,
+		"attachment_url":  msg.AttachmentURL,
+		"attachment_type": msg.AttachmentType,
+		"created_at":      msg.CreatedAt,
+		"is_read":         msg.IsRead,
+	}
+
+	logger.Log.WithFields(map[string]interface{}{
+		"sender_id":   senderID.(primitive.ObjectID).Hex(),
+		"receiver_id": receiverID.Hex(),
+		"message_id":  msg.ID.Hex(),
+		"content":     msg.Content,
+	}).Info("Broadcasting WebSocket message to receiver")
+
+	websocket.BroadcastMessage(receiverID, messagePayload)
 
 	c.JSON(http.StatusCreated, msg)
 }
