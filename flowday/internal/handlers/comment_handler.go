@@ -32,6 +32,13 @@ func CreateCommentHandler(c *gin.Context) {
 		return
 	}
 
+	// ✅ NEW: Process mentions in comment
+	if req.Content != "" {
+		go func() {
+			services.ProcessCommentMentions(comment.ID, req.Content, taskID, userID.(primitive.ObjectID))
+		}()
+	}
+
 	c.JSON(http.StatusCreated, comment)
 }
 

@@ -60,6 +60,13 @@ func CreateTask(c *gin.Context) {
 		return
 	}
 
+	// ✅ NEW: Process mentions in task description
+	if task.Description != "" {
+		go func() {
+			services.ProcessTaskMentions(task.ID, task.Description, userID.(primitive.ObjectID))
+		}()
+	}
+
 	services.LogActivity(userID.(primitive.ObjectID), models.ActivityTaskCreated, "Created task: "+task.Title, map[string]string{"task_id": task.ID.Hex()})
 
 	// ✅ REAL-TIME: Broadcast task creation via WebSocket
@@ -181,6 +188,13 @@ func UpdateTask(c *gin.Context) {
 	if err := services.UpdateTask(userID.(primitive.ObjectID), taskID, updates); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
+	}
+
+	// ✅ NEW: Process mentions if description was updated
+	if description, ok := updates["description"].(string); ok && description != "" {
+		go func() {
+			services.ProcessTaskMentions(taskID, description, userID.(primitive.ObjectID))
+		}()
 	}
 
 	// Get updated task for notifications
