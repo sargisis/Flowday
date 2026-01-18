@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 
@@ -546,4 +547,476 @@ func DeleteTaskAttachment(userID, taskID primitive.ObjectID, attachmentID string
 	}
 
 	return attachmentToDelete, nil
+}
+
+// ProcessTaskMentions processes @mentions in a task description and sends notifications
+func ProcessTaskMentions(taskID primitive.ObjectID, description string, authorID primitive.ObjectID) {
+	ctx := context.Background()
+
+	// Get task to find project
+	var task models.Task
+	err := db.Tasks.FindOne(ctx, bson.M{"_id": taskID}).Decode(&task)
+	if err != nil {
+		return // Task not found, skip processing
+	}
+
+	// Get project
+	var project models.Project
+	err = db.Projects.FindOne(ctx, bson.M{"_id": task.ProjectID}).Decode(&project)
+	if err != nil {
+		return // Project not found, skip processing
+	}
+
+	// Extract mentions from description (format: @username)
+	mentionRegex := regexp.MustCompile(`@(\w+)`)
+	matches := mentionRegex.FindAllStringSubmatch(description, -1)
+	if len(matches) == 0 {
+		return // No mentions found
+	}
+
+	// Get all project members (owner + accepted members)
+	members := []models.ProjectMember{}
+	
+	// Add owner as a member
+	ownerMember := models.ProjectMember{
+		UserID: project.UserID,
+	}
+	var owner models.User
+	if err := db.Users.FindOne(ctx, bson.M{"_id": project.UserID}).Decode(&owner); err == nil {
+		ownerMember.User = &owner
+		members = append(members, ownerMember)
+	}
+
+	// Get accepted project members
+	cursor, err := db.ProjectMembers.Find(ctx, bson.M{
+		"project_id": task.ProjectID,
+		"status":     "accepted",
+	})
+	if err == nil {
+		defer cursor.Close(ctx)
+		var projectMembers []models.ProjectMember
+		cursor.All(ctx, &projectMembers)
+		
+		// Populate user data for each member
+		for _, m := range projectMembers {
+			var user models.User
+			if err := db.Users.FindOne(ctx, bson.M{"_id": m.UserID}).Decode(&user); err == nil {
+				m.User = &user
+				members = append(members, m)
+			}
+		}
+	}
+
+	// Create a map of username/email to user ID for quick lookup
+	userMap := make(map[string]primitive.ObjectID)
+	for _, member := range members {
+		if member.User != nil {
+			// Map by name (case-insensitive)
+			if member.User.Name != "" {
+				userMap[strings.ToLower(member.User.Name)] = member.User.ID
+			}
+			// Map by email (case-insensitive)
+			if member.User.Email != "" {
+				userMap[strings.ToLower(member.User.Email)] = member.User.ID
+			}
+		}
+	}
+
+	// Process each mention and send notifications
+	notifiedUsers := make(map[primitive.ObjectID]bool)
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		mentionedName := strings.ToLower(match[1])
+		
+		// Find user by name or email
+		mentionedUserID, found := userMap[mentionedName]
+		if !found {
+			continue // User not found in project members
+		}
+
+		// Don't notify the author
+		if mentionedUserID == authorID {
+			continue
+		}
+
+		// Don't notify the same user twice
+		if notifiedUsers[mentionedUserID] {
+			continue
+		}
+
+		// Send notification
+		_, _ = CreateNotification(
+			mentionedUserID,
+			&taskID,
+			"You were mentioned in a task",
+			"You were mentioned in task: "+task.Title,
+			models.NotificationInfo,
+			"",
+		)
+		notifiedUsers[mentionedUserID] = true
+	}
+}
+
+// AddTaskDependency adds a dependency to a task
+func AddTaskDependency(userID, taskID, dependsOnTaskID primitive.ObjectID) error {
+	ctx := context.Background()
+
+	// Verify task access
+	_, err := GetTask(userID, taskID)
+	if err != nil {
+		return err
+	}
+
+	// Verify depends on task exists and user has access
+	_, err = GetTask(userID, dependsOnTaskID)
+	if err != nil {
+		return errors.New("depends on task not found or access denied")
+	}
+
+	// Prevent circular dependency
+	if taskID == dependsOnTaskID {
+		return errors.New("task cannot depend on itself")
+	}
+
+	// Get current task
+	var task models.Task
+	err = db.Tasks.FindOne(ctx, bson.M{"_id": taskID}).Decode(&task)
+	if err != nil {
+		return errors.New("task not found")
+	}
+
+	// Check if dependency already exists
+	for _, dep := range task.DependsOn {
+		if dep == dependsOnTaskID {
+			return errors.New("dependency already exists")
+		}
+	}
+
+	// Add dependency
+	task.DependsOn = append(task.DependsOn, dependsOnTaskID)
+
+	// Update task
+	_, err = db.Tasks.UpdateOne(ctx, bson.M{"_id": taskID}, bson.M{
+		"$set": bson.M{
+			"depends_on": task.DependsOn,
+			"updated_at": time.Now(),
+		},
+	})
+
+	// Also update the depends on task to add this task to its blocks array
+	var dependsOnTask models.Task
+	err = db.Tasks.FindOne(ctx, bson.M{"_id": dependsOnTaskID}).Decode(&dependsOnTask)
+	if err == nil {
+		dependsOnTask.Blocks = append(dependsOnTask.Blocks, taskID)
+		db.Tasks.UpdateOne(ctx, bson.M{"_id": dependsOnTaskID}, bson.M{
+			"$set": bson.M{
+				"blocks":     dependsOnTask.Blocks,
+				"updated_at": time.Now(),
+			},
+		})
+	}
+
+	return err
+}
+
+// RemoveTaskDependency removes a dependency from a task
+func RemoveTaskDependency(userID, taskID, dependsOnTaskID primitive.ObjectID) error {
+	ctx := context.Background()
+
+	// Verify task access
+	_, err := GetTask(userID, taskID)
+	if err != nil {
+		return err
+	}
+
+	// Get current task
+	var task models.Task
+	err = db.Tasks.FindOne(ctx, bson.M{"_id": taskID}).Decode(&task)
+	if err != nil {
+		return errors.New("task not found")
+	}
+
+	// Remove dependency
+	newDependsOn := []primitive.ObjectID{}
+	for _, dep := range task.DependsOn {
+		if dep != dependsOnTaskID {
+			newDependsOn = append(newDependsOn, dep)
+		}
+	}
+
+	// Update task
+	_, err = db.Tasks.UpdateOne(ctx, bson.M{"_id": taskID}, bson.M{
+		"$set": bson.M{
+			"depends_on": newDependsOn,
+			"updated_at": time.Now(),
+		},
+	})
+
+	// Also update the depends on task to remove this task from its blocks array
+	var dependsOnTask models.Task
+	err = db.Tasks.FindOne(ctx, bson.M{"_id": dependsOnTaskID}).Decode(&dependsOnTask)
+	if err == nil {
+		newBlocks := []primitive.ObjectID{}
+		for _, block := range dependsOnTask.Blocks {
+			if block != taskID {
+				newBlocks = append(newBlocks, block)
+			}
+		}
+		db.Tasks.UpdateOne(ctx, bson.M{"_id": dependsOnTaskID}, bson.M{
+			"$set": bson.M{
+				"blocks":     newBlocks,
+				"updated_at": time.Now(),
+			},
+		})
+	}
+
+	return err
+}
+
+// GetTaskDependencies returns all dependencies for a task
+func GetTaskDependencies(userID, taskID primitive.ObjectID) (map[string]interface{}, error) {
+	// Verify task access
+	task, err := GetTask(userID, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get depends on tasks
+	dependsOnTasks := []models.Task{}
+	if len(task.DependsOn) > 0 {
+		ctx := context.Background()
+		cursor, err := db.Tasks.Find(ctx, bson.M{
+			"_id": bson.M{"$in": task.DependsOn},
+		})
+		if err == nil {
+			defer cursor.Close(ctx)
+			cursor.All(ctx, &dependsOnTasks)
+		}
+	}
+
+	// Get blocks tasks
+	blocksTasks := []models.Task{}
+	if len(task.Blocks) > 0 {
+		ctx := context.Background()
+		cursor, err := db.Tasks.Find(ctx, bson.M{
+			"_id": bson.M{"$in": task.Blocks},
+		})
+		if err == nil {
+			defer cursor.Close(ctx)
+			cursor.All(ctx, &blocksTasks)
+		}
+	}
+
+	// Get blocked by tasks (tasks that have this task in their depends_on)
+	ctx := context.Background()
+	cursor, err := db.Tasks.Find(ctx, bson.M{
+		"depends_on": taskID,
+	})
+	blockedByTasks := []models.Task{}
+	if err == nil {
+		defer cursor.Close(ctx)
+		cursor.All(ctx, &blockedByTasks)
+	}
+
+	return map[string]interface{}{
+		"depends_on": dependsOnTasks,
+		"blocks":      blocksTasks,
+		"blocked_by":  blockedByTasks,
+	}, nil
+}
+
+// CreateTaskTemplate creates a new task template
+func CreateTaskTemplate(userID primitive.ObjectID, req dto.CreateTaskTemplateRequest) (*models.TaskTemplate, error) {
+	ctx := context.Background()
+
+	template := models.TaskTemplate{
+		ID:             primitive.NewObjectID(),
+		UserID:         userID,
+		Name:           req.Name,
+		Description:    req.Description,
+		Title:          req.Title,
+		TaskDescription: req.TaskDescription,
+		Priority:       req.Priority,
+		EstimatedHours: req.EstimatedHours,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+
+	if req.ProjectID != "" {
+		projectID, err := primitive.ObjectIDFromHex(req.ProjectID)
+		if err == nil {
+			template.ProjectID = &projectID
+		}
+	}
+
+	// Convert subtasks
+	if len(req.Subtasks) > 0 {
+		template.Subtasks = make([]models.Subtask, len(req.Subtasks))
+		for i, st := range req.Subtasks {
+			template.Subtasks[i] = models.Subtask{
+				ID:        st.ID,
+				Title:     st.Title,
+				Completed: st.Completed,
+			}
+		}
+	}
+
+	_, err := db.TaskTemplates.InsertOne(ctx, template)
+	if err != nil {
+		return nil, err
+	}
+
+	return &template, nil
+}
+
+// GetTaskTemplates returns all task templates for a user
+func GetTaskTemplates(userID primitive.ObjectID) ([]models.TaskTemplate, error) {
+	ctx := context.Background()
+
+	cursor, err := db.TaskTemplates.Find(ctx, bson.M{"user_id": userID})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var templates []models.TaskTemplate
+	if err = cursor.All(ctx, &templates); err != nil {
+		return nil, err
+	}
+
+	return templates, nil
+}
+
+// GetTaskTemplate returns a specific task template
+func GetTaskTemplate(userID, templateID primitive.ObjectID) (*models.TaskTemplate, error) {
+	ctx := context.Background()
+
+	var template models.TaskTemplate
+	err := db.TaskTemplates.FindOne(ctx, bson.M{
+		"_id":     templateID,
+		"user_id": userID,
+	}).Decode(&template)
+	if err != nil {
+		return nil, errors.New("template not found")
+	}
+
+	return &template, nil
+}
+
+// UpdateTaskTemplate updates a task template
+func UpdateTaskTemplate(userID, templateID primitive.ObjectID, req dto.UpdateTaskTemplateRequest) (*models.TaskTemplate, error) {
+	ctx := context.Background()
+
+	update := bson.M{}
+	if req.Name != "" {
+		update["name"] = req.Name
+	}
+	if req.Description != "" {
+		update["description"] = req.Description
+	}
+	if req.Title != "" {
+		update["title"] = req.Title
+	}
+	if req.TaskDescription != "" {
+		update["task_description"] = req.TaskDescription
+	}
+	if req.Priority != "" {
+		update["priority"] = req.Priority
+	}
+	if req.EstimatedHours != nil {
+		update["estimated_hours"] = *req.EstimatedHours
+	}
+	if req.ProjectID != "" {
+		projectID, err := primitive.ObjectIDFromHex(req.ProjectID)
+		if err == nil {
+			update["project_id"] = projectID
+		}
+	}
+	if len(req.Subtasks) > 0 {
+		subtasks := make([]models.Subtask, len(req.Subtasks))
+		for i, st := range req.Subtasks {
+			subtasks[i] = models.Subtask{
+				ID:        st.ID,
+				Title:     st.Title,
+				Completed: st.Completed,
+			}
+		}
+		update["subtasks"] = subtasks
+	}
+	update["updated_at"] = time.Now()
+
+	result := db.TaskTemplates.FindOneAndUpdate(
+		ctx,
+		bson.M{"_id": templateID, "user_id": userID},
+		bson.M{"$set": update},
+		options.FindOneAndUpdate().SetReturnDocument(options.After),
+	)
+
+	var template models.TaskTemplate
+	if err := result.Decode(&template); err != nil {
+		return nil, errors.New("template not found")
+	}
+
+	return &template, nil
+}
+
+// DeleteTaskTemplate deletes a task template
+func DeleteTaskTemplate(userID, templateID primitive.ObjectID) error {
+	ctx := context.Background()
+
+	result, err := db.TaskTemplates.DeleteOne(ctx, bson.M{
+		"_id":     templateID,
+		"user_id": userID,
+	})
+	if err != nil {
+		return err
+	}
+	if result.DeletedCount == 0 {
+		return errors.New("template not found")
+	}
+
+	return nil
+}
+
+// CreateTaskFromTemplate creates a task from a template
+func CreateTaskFromTemplate(userID, templateID primitive.ObjectID, req dto.CreateTaskFromTemplateRequest) (*models.Task, error) {
+	ctx := context.Background()
+
+	// Get the template
+	template, err := GetTaskTemplate(userID, templateID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse project ID
+	projectID, err := primitive.ObjectIDFromHex(req.ProjectID)
+	if err != nil {
+		return nil, errors.New("invalid project_id format")
+	}
+
+	// Create task from template
+	task := models.Task{
+		ID:          primitive.NewObjectID(),
+		Title:       template.Title,
+		Description: template.TaskDescription,
+		Priority:    template.Priority,
+		Status:      "todo",
+		ProjectID:   projectID,
+		Subtasks:    template.Subtasks,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	if template.EstimatedHours != nil {
+		task.EstimatedHours = template.EstimatedHours
+	}
+
+	_, err = db.Tasks.InsertOne(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+
+	return &task, nil
 }

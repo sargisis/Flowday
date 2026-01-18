@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+	"regexp"
+	"strings"
 	"time"
 
 	"flowday/internal/db"
@@ -177,4 +179,114 @@ func DeleteComment(userID, commentID primitive.ObjectID) error {
 	// Delete comment
 	_, err = db.Comments.DeleteOne(ctx, bson.M{"_id": commentID})
 	return err
+}
+
+// ProcessCommentMentions processes @mentions in a comment and sends notifications
+func ProcessCommentMentions(commentID primitive.ObjectID, content string, taskID, authorID primitive.ObjectID) {
+	ctx := context.Background()
+
+	// Get task to find project
+	var task models.Task
+	err := db.Tasks.FindOne(ctx, bson.M{"_id": taskID}).Decode(&task)
+	if err != nil {
+		return // Task not found, skip processing
+	}
+
+	// Get project
+	var project models.Project
+	err = db.Projects.FindOne(ctx, bson.M{"_id": task.ProjectID}).Decode(&project)
+	if err != nil {
+		return // Project not found, skip processing
+	}
+
+	// Extract mentions from content (format: @username)
+	mentionRegex := regexp.MustCompile(`@(\w+)`)
+	matches := mentionRegex.FindAllStringSubmatch(content, -1)
+	if len(matches) == 0 {
+		return // No mentions found
+	}
+
+	// Get all project members (owner + accepted members)
+	members := []models.ProjectMember{}
+	
+	// Add owner as a member
+	ownerMember := models.ProjectMember{
+		UserID: project.UserID,
+	}
+	var owner models.User
+	if err := db.Users.FindOne(ctx, bson.M{"_id": project.UserID}).Decode(&owner); err == nil {
+		ownerMember.User = &owner
+		members = append(members, ownerMember)
+	}
+
+	// Get accepted project members
+	cursor, err := db.ProjectMembers.Find(ctx, bson.M{
+		"project_id": task.ProjectID,
+		"status":     "accepted",
+	})
+	if err == nil {
+		defer cursor.Close(ctx)
+		var projectMembers []models.ProjectMember
+		cursor.All(ctx, &projectMembers)
+		
+		// Populate user data for each member
+		for _, m := range projectMembers {
+			var user models.User
+			if err := db.Users.FindOne(ctx, bson.M{"_id": m.UserID}).Decode(&user); err == nil {
+				m.User = &user
+				members = append(members, m)
+			}
+		}
+	}
+
+	// Create a map of username/email to user ID for quick lookup
+	userMap := make(map[string]primitive.ObjectID)
+	for _, member := range members {
+		if member.User != nil {
+			// Map by name (case-insensitive)
+			if member.User.Name != "" {
+				userMap[strings.ToLower(member.User.Name)] = member.User.ID
+			}
+			// Map by email (case-insensitive)
+			if member.User.Email != "" {
+				userMap[strings.ToLower(member.User.Email)] = member.User.ID
+			}
+		}
+	}
+
+	// Process each mention and send notifications
+	notifiedUsers := make(map[primitive.ObjectID]bool)
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		mentionedName := strings.ToLower(match[1])
+		
+		// Find user by name or email
+		mentionedUserID, found := userMap[mentionedName]
+		if !found {
+			continue // User not found in project members
+		}
+
+		// Don't notify the author
+		if mentionedUserID == authorID {
+			continue
+		}
+
+		// Don't notify the same user twice
+		if notifiedUsers[mentionedUserID] {
+			continue
+		}
+
+		// Send notification
+		_, _ = CreateNotification(
+			mentionedUserID,
+			&taskID,
+			"You were mentioned in a comment",
+			"You were mentioned in a comment on task: "+task.Title,
+			models.NotificationInfo,
+			"",
+		)
+		notifiedUsers[mentionedUserID] = true
+	}
 }

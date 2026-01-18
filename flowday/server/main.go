@@ -121,11 +121,11 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// ✅ METRICS: Add Prometheus metrics collection
-	r.Use(middleware.MetricsMiddleware())
-
 	// ✅ LOGGING: Add structured request logging
-	r.Use(middleware.LoggingMiddleware())
+	r.Use(middleware.Logging())
+
+	// ✅ METRICS: Add Prometheus metrics collection
+	r.Use(middleware.Metrics())
 
 	// ✅ SECURITY: Add global rate limiting (100 req/min per IP)
 	r.Use(middleware.GlobalRateLimitMiddleware())
@@ -135,7 +135,8 @@ func main() {
 	r.Use(middleware.UserRateLimitMiddleware())
 
 	// ✅ SECURITY: Add audit logging for important actions
-	r.Use(middleware.AuditLogMiddleware())
+	// TODO: Implement AuditLogMiddleware when audit logging is needed
+	// r.Use(middleware.AuditLogMiddleware())
 
 	// ✅ STABILITY: Add panic recovery middleware
 	r.Use(middleware.RecoveryMiddleware())

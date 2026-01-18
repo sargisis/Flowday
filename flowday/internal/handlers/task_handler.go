@@ -589,3 +589,192 @@ func DeleteTaskAttachment(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+
+// AddTaskDependency handles POST /tasks/:id/dependencies
+func AddTaskDependency(c *gin.Context) {
+	taskID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format"})
+		return
+	}
+
+	var req dto.AddTaskDependencyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	dependsOnTaskID, err := primitive.ObjectIDFromHex(req.DependsOnTaskID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid depends_on_task_id format"})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	if err := services.AddTaskDependency(userID.(primitive.ObjectID), taskID, dependsOnTaskID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// RemoveTaskDependency handles DELETE /tasks/:id/dependencies
+func RemoveTaskDependency(c *gin.Context) {
+	taskID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format"})
+		return
+	}
+
+	var req dto.RemoveTaskDependencyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	dependsOnTaskID, err := primitive.ObjectIDFromHex(req.DependsOnTaskID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid depends_on_task_id format"})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	if err := services.RemoveTaskDependency(userID.(primitive.ObjectID), taskID, dependsOnTaskID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// GetTaskDependencies handles GET /tasks/:id/dependencies
+func GetTaskDependencies(c *gin.Context) {
+	taskID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format"})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	dependencies, err := services.GetTaskDependencies(userID.(primitive.ObjectID), taskID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, dependencies)
+}
+
+// CreateTaskTemplate handles POST /templates
+func CreateTaskTemplate(c *gin.Context) {
+	var req dto.CreateTaskTemplateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	template, err := services.CreateTaskTemplate(userID.(primitive.ObjectID), req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, template)
+}
+
+// GetTaskTemplates handles GET /templates
+func GetTaskTemplates(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	templates, err := services.GetTaskTemplates(userID.(primitive.ObjectID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, templates)
+}
+
+// GetTaskTemplate handles GET /templates/:id
+func GetTaskTemplate(c *gin.Context) {
+	templateID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template id format"})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	template, err := services.GetTaskTemplate(userID.(primitive.ObjectID), templateID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, template)
+}
+
+// UpdateTaskTemplate handles PATCH /templates/:id
+func UpdateTaskTemplate(c *gin.Context) {
+	templateID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template id format"})
+		return
+	}
+
+	var req dto.UpdateTaskTemplateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	template, err := services.UpdateTaskTemplate(userID.(primitive.ObjectID), templateID, req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, template)
+}
+
+// DeleteTaskTemplate handles DELETE /templates/:id
+func DeleteTaskTemplate(c *gin.Context) {
+	templateID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template id format"})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	if err := services.DeleteTaskTemplate(userID.(primitive.ObjectID), templateID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// CreateTaskFromTemplate handles POST /templates/:id/create-task
+func CreateTaskFromTemplate(c *gin.Context) {
+	templateID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template id format"})
+		return
+	}
+
+	var req dto.CreateTaskFromTemplateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	task, err := services.CreateTaskFromTemplate(userID.(primitive.ObjectID), templateID, req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, task)
+}
