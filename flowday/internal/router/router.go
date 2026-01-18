@@ -190,13 +190,13 @@ func Setup(r *gin.Engine) {
 	viewsGroup.Use(middleware.AuthMiddleware())
 	{
 		viewsGroup.POST("", handlers.CreateSavedView)
-		viewsGroup.GET("", handlers.GetSavedViews)
-		viewsGroup.GET("/:id", handlers.GetSavedView)
-		viewsGroup.PATCH("/:id", handlers.UpdateSavedView)
-		viewsGroup.DELETE("/:id", handlers.DeleteSavedView)
+		viewsGroup.GET("", handlers.GetSavedViewsHandler)
+		viewsGroup.GET("/:id", handlers.GetSavedViewHandler)
+		viewsGroup.PATCH("/:id", handlers.UpdateSavedViewHandler)
+		viewsGroup.DELETE("/:id", handlers.DeleteSavedViewHandler)
 	}
 
-	// ✅ NEW FEATURES: Time Tracking
+	// ---------- TIME TRACKING ----------
 	timeGroup := v1.Group("/time")
 	timeGroup.Use(middleware.AuthMiddleware())
 	{
