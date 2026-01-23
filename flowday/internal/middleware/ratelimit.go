@@ -167,10 +167,10 @@ func GlobalRateLimitMiddleware() gin.HandlerFunc {
 	}
 }
 
-// UserRateLimitMiddleware provides user-based rate limiting (200 req/min per user)
+// UserRateLimitMiddleware provides user-based rate limiting (1000 req/min per user)
 // Excludes WebSocket and health check endpoints
 func UserRateLimitMiddleware() gin.HandlerFunc {
-	limitRate, err := limiter.NewRateFromFormatted("200-M")
+	limitRate, err := limiter.NewRateFromFormatted("1000-M")
 	if err != nil {
 		panic(err)
 	}

@@ -1,24 +1,84 @@
 package dto
 
 import (
+	"encoding/json"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+// NullableTime handles null, empty string, and valid time values
+type NullableTime struct {
+	Time  *time.Time
+	Valid bool
+}
+
+// UnmarshalJSON custom unmarshaler that handles empty strings and null
+func (nt *NullableTime) UnmarshalJSON(data []byte) error {
+	// Handle null
+	if string(data) == "null" {
+		nt.Valid = false
+		nt.Time = nil
+		return nil
+	}
+
+	// Handle empty string
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		if str == "" {
+			nt.Valid = false
+			nt.Time = nil
+			return nil
+		}
+		// Parse non-empty string
+		t, err := time.Parse(time.RFC3339, str)
+		if err != nil {
+			return err
+		}
+		nt.Time = &t
+		nt.Valid = true
+		return nil
+	}
+
+	// Try to parse as time object directly
+	var t time.Time
+	if err := json.Unmarshal(data, &t); err != nil {
+		return err
+	}
+	nt.Time = &t
+	nt.Valid = true
+	return nil
+}
+
 type CreateTaskRequest struct {
-	Title       string     `json:"title" binding:"required"`
-	Description string     `json:"description"`
-	Priority    string     `json:"priority"`
-	DueDate     *time.Time `json:"due_date"`
-	ProjectID   string     `json:"project_id" binding:"required"`
+	Title       string       `json:"title" binding:"required"`
+	Description string       `json:"description"`
+	Priority    string       `json:"priority"`
+	DueDate     NullableTime `json:"due_date"`
+	ProjectID   string       `json:"project_id" binding:"required"`
+}
+
+// GetDueDateTimePtr returns the time pointer or nil
+func (r *CreateTaskRequest) GetDueDateTimePtr() *time.Time {
+	if r.DueDate.Valid {
+		return r.DueDate.Time
+	}
+	return nil
 }
 
 type UpdateTaskRequest struct {
-	Status      *string    `json:"status"`
-	Priority    *string    `json:"priority"`
-	Description *string    `json:"description"`
-	DueDate     *time.Time `json:"due_date"`
+	Status      *string      `json:"status"`
+	Priority    *string      `json:"priority"`
+	Description *string      `json:"description"`
+	DueDate     *NullableTime `json:"due_date,omitempty"`
+}
+
+// GetDueDateTimePtr returns the time pointer or nil
+func (r *UpdateTaskRequest) GetDueDateTimePtr() *time.Time {
+	if r.DueDate != nil && r.DueDate.Valid {
+		return r.DueDate.Time
+	}
+	return nil
 }
 
 // Helper to convert ProjectID string to ObjectID
