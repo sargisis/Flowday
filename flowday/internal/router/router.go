@@ -99,6 +99,7 @@ func Setup(r *gin.Engine) {
 		tasksGroup.POST("/bulk-delete", handlers.BulkDeleteTasks)
 		tasksGroup.POST("/bulk-update-status", handlers.BulkUpdateTasksStatus)
 		tasksGroup.POST("/bulk-update-priority", handlers.BulkUpdateTasksPriority)
+		tasksGroup.POST("/batch-dependencies", handlers.GetBatchTaskDependencies)
 
 		// ✅ calendar API
 		tasksGroup.GET("/by-date", handlers.GetTasksByDate) // ?date=YYYY-MM-DD
@@ -108,6 +109,7 @@ func Setup(r *gin.Engine) {
 
 		// ✅ stats API
 		tasksGroup.GET("/stats", handlers.GetTaskStats)
+		tasksGroup.GET("/analytics", handlers.GetTaskAnalytics) // ?project_id=xxx&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
 
 		// 💬 Comments (must be before generic :id routes to avoid conflict)
 		tasksGroup.POST("/:id/comments", handlers.CreateCommentHandler)
@@ -157,7 +159,11 @@ func Setup(r *gin.Engine) {
 	notificationsGroup.Use(middleware.AuthMiddleware())
 	{
 		notificationsGroup.GET("", handlers.GetNotificationsHandler)
+		notificationsGroup.GET("/unread-count", handlers.GetUnreadCountHandler)
 		notificationsGroup.PATCH("/:id/read", handlers.MarkNotificationReadHandler)
+		notificationsGroup.POST("/batch-read", handlers.MarkNotificationsReadHandler)
+		notificationsGroup.POST("/mark-all-read", handlers.MarkAllNotificationsReadHandler)
+		notificationsGroup.DELETE("/old", handlers.DeleteOldNotificationsHandler)
 	}
 
 	// ---------- FOCUS SESSIONS ----------

@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"time"
 
+	"flowday/internal/cache"
 	"flowday/internal/db"
 	"flowday/internal/dto"
 	"flowday/internal/models"
@@ -27,10 +29,28 @@ func CreateProject(userID primitive.ObjectID, name string) (*models.Project, err
 		return nil, err
 	}
 
+	// ✅ OPTIMIZATION: Invalidate cache for user's projects
+	cache.Delete("projects:" + userID.Hex())
+
 	return &project, nil
 }
 
 func GetProjects(userID primitive.ObjectID) ([]models.Project, error) {
+	// ✅ OPTIMIZATION: Try to get from cache first
+	cacheKey := "projects:" + userID.Hex()
+	if cached, ok := cache.Get(cacheKey); ok {
+		if projects, ok := cached.([]models.Project); ok {
+			return projects, nil
+		}
+		// If cached value is JSON string, unmarshal it
+		if jsonStr, ok := cached.(string); ok {
+			var projects []models.Project
+			if err := json.Unmarshal([]byte(jsonStr), &projects); err == nil {
+				return projects, nil
+			}
+		}
+	}
+
 	ctx := context.Background()
 
 	// Get projects owned by user

@@ -2,10 +2,10 @@ package worker
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"flowday/internal/db"
+	"flowday/internal/logger"
 	"flowday/internal/models"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -16,6 +16,9 @@ import (
 func StartRecurringTasksProcessor() {
 	ticker := time.NewTicker(1 * time.Hour) // Run every hour
 	go func() {
+		// Run immediately on startup
+		processRecurringTasks()
+		
 		for {
 			select {
 			case <-ticker.C:
@@ -23,11 +26,11 @@ func StartRecurringTasksProcessor() {
 			}
 		}
 	}()
-	log.Println("[Worker] Recurring Tasks Processor started")
+	logger.Log.Info("✅ Recurring Tasks Processor started")
 }
 
 func processRecurringTasks() {
-	log.Println("[Worker] Processing recurring tasks...")
+	logger.Log.Info("[Worker] Processing recurring tasks...")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -40,15 +43,20 @@ func processRecurringTasks() {
 
 	cursor, err := db.Tasks.Find(ctx, filter)
 	if err != nil {
-		log.Printf("[Worker] Failed to fetch recurring tasks: %v", err)
+		logger.Log.WithError(err).Error("[Worker] Failed to fetch recurring tasks")
 		return
 	}
 	defer cursor.Close(ctx)
 
 	now := time.Now()
+	processedCount := 0
+	errorCount := 0
+
 	for cursor.Next(ctx) {
 		var task models.Task
 		if err := cursor.Decode(&task); err != nil {
+			logger.Log.WithError(err).Warn("[Worker] Failed to decode recurring task")
+			errorCount++
 			continue
 		}
 
@@ -56,41 +64,81 @@ func processRecurringTasks() {
 			continue
 		}
 
+		// ✅ ENHANCED: Check if recurrence has ended
+		if task.Recurrence.EndDate != nil && now.After(*task.Recurrence.EndDate) {
+			logger.Log.Debugf("[Worker] Recurring task %s has reached end date, skipping", task.ID.Hex())
+			continue
+		}
+
+		// ✅ ENHANCED: Check if max count reached
+		if task.Recurrence.Count != nil {
+			// Count how many times this task has been created
+			count, err := db.Tasks.CountDocuments(ctx, bson.M{
+				"recurrence.last_created": bson.M{"$exists": true},
+				"title":                   task.Title,
+				"project_id":              task.ProjectID,
+			})
+			if err == nil && int64(*task.Recurrence.Count) <= count {
+				logger.Log.Debugf("[Worker] Recurring task %s has reached max count (%d), skipping", 
+					task.ID.Hex(), *task.Recurrence.Count)
+				continue
+			}
+		}
+
 		// Check if it's time to create a new instance
 		if shouldCreateRecurringTask(task, now) {
-			createNextRecurringTask(ctx, task)
+			if err := createNextRecurringTask(ctx, task); err != nil {
+				logger.Log.WithError(err).Errorf("[Worker] Failed to create recurring task: %s", task.ID.Hex())
+				errorCount++
+			} else {
+				processedCount++
+			}
 		}
+	}
+
+	if processedCount > 0 || errorCount > 0 {
+		logger.Log.Infof("[Worker] Processed %d recurring tasks, %d errors", processedCount, errorCount)
 	}
 }
 
 func shouldCreateRecurringTask(task models.Task, now time.Time) bool {
 	if task.Recurrence.LastCreated == nil {
-		// First time processing - create if task was completed recently
-		return true
+		// ✅ ENHANCED: First time processing - check if task was completed recently (within last 24 hours)
+		// This prevents creating tasks for old completed tasks
+		if task.UpdatedAt.IsZero() {
+			return false
+		}
+		hoursSinceCompletion := now.Sub(task.UpdatedAt).Hours()
+		return hoursSinceCompletion <= 24 // Only create if completed within last 24 hours
 	}
 
 	lastCreated := *task.Recurrence.LastCreated
 	recurrence := task.Recurrence
 
+	// ✅ ENHANCED: Improved time calculations
 	switch recurrence.Type {
 	case "daily":
-		return now.Sub(lastCreated).Hours() >= float64(24*recurrence.Interval)
+		hoursSince := now.Sub(lastCreated).Hours()
+		return hoursSince >= float64(24*recurrence.Interval)
 	case "weekly":
-		daysSince := int(now.Sub(lastCreated).Hours() / 24)
-		return daysSince >= 7*recurrence.Interval
+		daysSince := now.Sub(lastCreated).Hours() / 24
+		return daysSince >= float64(7*recurrence.Interval)
 	case "monthly":
-		monthsSince := int(now.Sub(lastCreated).Hours() / (24 * 30))
-		return monthsSince >= recurrence.Interval
+		// More accurate month calculation
+		monthsSince := float64(now.Year()-lastCreated.Year())*12 + float64(now.Month()-lastCreated.Month())
+		return monthsSince >= float64(recurrence.Interval)
 	case "yearly":
-		yearsSince := int(now.Sub(lastCreated).Hours() / (24 * 365))
-		return yearsSince >= recurrence.Interval
+		yearsSince := float64(now.Year() - lastCreated.Year())
+		return yearsSince >= float64(recurrence.Interval)
 	default:
+		logger.Log.Warnf("[Worker] Unknown recurrence type: %s", recurrence.Type)
 		return false
 	}
 }
 
-func createNextRecurringTask(ctx context.Context, originalTask models.Task) {
-	// Create a new task instance based on the recurring task
+func createNextRecurringTask(ctx context.Context, originalTask models.Task) error {
+	// ✅ ENHANCED: Create a new task instance based on the recurring task
+	now := time.Now()
 	newTask := models.Task{
 		ID:          primitive.NewObjectID(),
 		Title:       originalTask.Title,
@@ -99,23 +147,25 @@ func createNextRecurringTask(ctx context.Context, originalTask models.Task) {
 		Priority:    originalTask.Priority,
 		ProjectID:   originalTask.ProjectID,
 		IsRecurring: true,
-		Recurrence:  originalTask.Recurrence,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
-	// Update the recurrence's last created time
-	now := time.Now()
-	newTask.Recurrence.LastCreated = &now
+	// ✅ ENHANCED: Copy recurrence settings and update last created time
+	if originalTask.Recurrence != nil {
+		recurrence := *originalTask.Recurrence
+		recurrence.LastCreated = &now
+		newTask.Recurrence = &recurrence
+	}
 
 	// Insert the new task
 	_, err := db.Tasks.InsertOne(ctx, newTask)
 	if err != nil {
-		log.Printf("[Worker] Failed to create recurring task: %v", err)
-		return
+		logger.Log.WithError(err).Errorf("[Worker] Failed to create recurring task: %s", originalTask.ID.Hex())
+		return err
 	}
 
-	// Update the original task's recurrence last created time
+	// ✅ ENHANCED: Update the original task's recurrence last created time
 	update := bson.M{
 		"$set": bson.M{
 			"recurrence.last_created": now,
@@ -123,8 +173,10 @@ func createNextRecurringTask(ctx context.Context, originalTask models.Task) {
 	}
 	_, err = db.Tasks.UpdateOne(ctx, bson.M{"_id": originalTask.ID}, update)
 	if err != nil {
-		log.Printf("[Worker] Failed to update recurring task: %v", err)
+		logger.Log.WithError(err).Warnf("[Worker] Failed to update recurring task last_created: %s", originalTask.ID.Hex())
+		// Don't return error - task was created successfully
 	}
 
-	log.Printf("[Worker] Created recurring task: %s", newTask.Title)
+	logger.Log.Infof("[Worker] ✅ Created recurring task: %s (ID: %s)", newTask.Title, newTask.ID.Hex())
+	return nil
 }

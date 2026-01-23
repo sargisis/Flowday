@@ -160,7 +160,12 @@ func GetTasks(c *gin.Context) {
 func UpdateTask(c *gin.Context) {
 	taskID, err := primitive.ObjectIDFromHex(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format"})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"code":    "BAD_REQUEST",
+				"message": "Invalid task id format",
+			},
+		})
 		return
 	}
 
@@ -596,10 +601,28 @@ func UploadTaskAttachment(c *gin.Context) {
 		return
 	}
 
-	// ✅ SECURITY: Validate file size (max 10MB for attachments)
+	// ✅ ENHANCED: Validate file size (max 10MB for attachments)
 	const maxAttachmentSize = 10 * 1024 * 1024 // 10MB
 	if file.Size > maxAttachmentSize {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "File size exceeds maximum allowed size (10MB)"})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"code":    "FILE_TOO_LARGE",
+				"message": "File size exceeds maximum allowed size (10MB)",
+				"details": fmt.Sprintf("File size: %.2f MB, Maximum: 10 MB", float64(file.Size)/(1024*1024)),
+			},
+		})
+		return
+	}
+
+	// ✅ ENHANCED: Validate minimum file size (prevent empty files)
+	const minFileSize = 1 // 1 byte minimum
+	if file.Size < minFileSize {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"code":    "FILE_TOO_SMALL",
+				"message": "File is empty or too small",
+			},
+		})
 		return
 	}
 
@@ -638,14 +661,32 @@ func UploadTaskAttachment(c *gin.Context) {
 	ext = strings.TrimPrefix(ext, ".")
 	ext = strings.Trim(ext, "/\\")
 
-	// Basic extension validation - prevent executable files
+	// ✅ ENHANCED: Basic extension validation - prevent executable files
 	dangerousExts := map[string]bool{
 		"exe": true, "bat": true, "cmd": true, "com": true, "pif": true,
 		"scr": true, "vbs": true, "js": true, "jar": true, "sh": true,
 		"php": true, "asp": true, "aspx": true, "jsp": true,
+		"bin": true, "dll": true, "so": true, "dylib": true, // Additional dangerous extensions
 	}
 	if dangerousExts[ext] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "File type not allowed. Executable files are prohibited"})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"code":    "FILE_TYPE_NOT_ALLOWED",
+				"message": "File type not allowed. Executable files are prohibited",
+				"details": fmt.Sprintf("Extension '%s' is not allowed for security reasons", ext),
+			},
+		})
+		return
+	}
+
+	// ✅ ENHANCED: Validate filename length
+	if len(file.Filename) > 255 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"code":    "FILENAME_TOO_LONG",
+				"message": "Filename is too long (maximum 255 characters)",
+			},
+		})
 		return
 	}
 
@@ -825,6 +866,39 @@ func GetTaskDependencies(c *gin.Context) {
 	dependencies, err := services.GetTaskDependencies(userID.(primitive.ObjectID), taskID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, dependencies)
+}
+
+// GetBatchTaskDependencies handles POST /tasks/batch-dependencies
+func GetBatchTaskDependencies(c *gin.Context) {
+	var req dto.BatchDependenciesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.TaskIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{})
+		return
+	}
+
+	var objectIDs []primitive.ObjectID
+	for _, id := range req.TaskIDs {
+		oid, err := primitive.ObjectIDFromHex(id)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format: " + id})
+			return
+		}
+		objectIDs = append(objectIDs, oid)
+	}
+
+	userID, _ := c.Get("user_id")
+	dependencies, err := services.GetBatchTaskDependencies(userID.(primitive.ObjectID), objectIDs)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
 

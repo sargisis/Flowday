@@ -26,7 +26,64 @@ var (
 		},
 		[]string{"method", "endpoint"},
 	)
+
+	// ✅ ENHANCED: Business metrics
+	tasksCreated = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "tasks_created_total",
+			Help: "Total number of tasks created",
+		},
+	)
+
+	tasksCompleted = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "tasks_completed_total",
+			Help: "Total number of tasks completed",
+		},
+	)
+
+	tasksDeleted = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "tasks_deleted_total",
+			Help: "Total number of tasks deleted",
+		},
+	)
+
+	activeUsers = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "active_users",
+			Help: "Number of active users",
+		},
+	)
+
+	databaseOperations = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "database_operations_total",
+			Help: "Total number of database operations",
+		},
+		[]string{"operation", "collection"},
+	)
 )
+
+// RecordTaskCreated increments the tasks created counter
+func RecordTaskCreated() {
+	tasksCreated.Inc()
+}
+
+// RecordTaskCompleted increments the tasks completed counter
+func RecordTaskCompleted() {
+	tasksCompleted.Inc()
+}
+
+// RecordTaskDeleted increments the tasks deleted counter
+func RecordTaskDeleted() {
+	tasksDeleted.Inc()
+}
+
+// RecordDatabaseOperation records a database operation
+func RecordDatabaseOperation(operation, collection string) {
+	databaseOperations.WithLabelValues(operation, collection).Inc()
+}
 
 // Metrics provides Prometheus metrics collection middleware
 func Metrics() gin.HandlerFunc {

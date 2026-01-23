@@ -193,3 +193,15 @@ type BulkUpdatePriorityRequest struct {
 	TaskIDs []string `json:"task_ids" binding:"required"`
 	Priority string   `json:"priority" binding:"required"`
 }
+
+// Batch Dependencies DTO
+type BatchDependenciesRequest struct {
+	TaskIDs []string `json:"task_ids" binding:"required"`
+}
+
+// Analytics DTOs
+type TaskAnalyticsRequest struct {
+	ProjectID string `form:"project_id"`
+	StartDate string `form:"start_date"` // YYYY-MM-DD
+	EndDate   string `form:"end_date"`   // YYYY-MM-DD
+}
