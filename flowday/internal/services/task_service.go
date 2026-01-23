@@ -243,6 +243,122 @@ func BulkDeleteTasks(userID primitive.ObjectID, taskIDs []primitive.ObjectID) er
 	return nil
 }
 
+func BulkUpdateTasksStatus(userID primitive.ObjectID, taskIDs []primitive.ObjectID, status string) (int, error) {
+	ctx := context.Background()
+	updatedCount := 0
+
+	// First, verify access to all tasks and collect their project IDs
+	var tasks []models.Task
+	cursor, err := db.Tasks.Find(ctx, bson.M{"_id": bson.M{"$in": taskIDs}})
+	if err != nil {
+		return 0, err
+	}
+	if err = cursor.All(ctx, &tasks); err != nil {
+		return 0, err
+	}
+
+	// Verify access to all tasks
+	for _, task := range tasks {
+		if err := verifyProjectAccess(ctx, userID, task.ProjectID); err != nil {
+			return 0, errors.New("access denied to task: " + task.ID.Hex())
+		}
+	}
+
+	// Update all tasks
+	updateResult, err := db.Tasks.UpdateMany(ctx,
+		bson.M{"_id": bson.M{"$in": taskIDs}},
+		bson.M{
+			"$set": bson.M{
+				"status":     status,
+				"updated_at": time.Now(),
+			},
+		},
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	updatedCount = int(updateResult.ModifiedCount)
+
+	// Award XP for completed tasks if status is "done"
+	if strings.ToLower(status) == "done" {
+		// Get tasks that were updated from non-done to done
+		var updatedTasks []models.Task
+		cursor, _ := db.Tasks.Find(ctx, bson.M{"_id": bson.M{"$in": taskIDs}})
+		cursor.All(ctx, &updatedTasks)
+
+		// Award XP for each task that was completed
+		xpToAdd := 10 * updatedCount
+		if xpToAdd > 0 {
+			_, err = db.Users.UpdateOne(ctx,
+				bson.M{"_id": userID},
+				bson.M{
+					"$inc": bson.M{"xp": xpToAdd},
+				},
+			)
+			if err == nil {
+				// Check for level up
+				var updatedUser models.User
+				if err := db.Users.FindOne(ctx, bson.M{"_id": userID}).Decode(&updatedUser); err == nil {
+					if updatedUser.Level == 0 {
+						updatedUser.Level = 1
+						db.Users.UpdateOne(ctx,
+							bson.M{"_id": userID},
+							bson.M{"$set": bson.M{"level": 1}},
+						)
+					}
+					newLevel := (updatedUser.XP / 100) + 1
+					if newLevel > updatedUser.Level {
+						db.Users.UpdateOne(ctx,
+							bson.M{"_id": userID},
+							bson.M{"$set": bson.M{"level": newLevel}},
+						)
+					}
+				}
+			}
+		}
+	}
+
+	return updatedCount, nil
+}
+
+func BulkUpdateTasksPriority(userID primitive.ObjectID, taskIDs []primitive.ObjectID, priority string) (int, error) {
+	ctx := context.Background()
+
+	// First, verify access to all tasks
+	var tasks []models.Task
+	cursor, err := db.Tasks.Find(ctx, bson.M{"_id": bson.M{"$in": taskIDs}})
+	if err != nil {
+		return 0, err
+	}
+	if err = cursor.All(ctx, &tasks); err != nil {
+		return 0, err
+	}
+
+	// Verify access to all tasks
+	for _, task := range tasks {
+		if err := verifyProjectAccess(ctx, userID, task.ProjectID); err != nil {
+			return 0, errors.New("access denied to task: " + task.ID.Hex())
+		}
+	}
+
+	// Update all tasks
+	updateResult, err := db.Tasks.UpdateMany(ctx,
+		bson.M{"_id": bson.M{"$in": taskIDs}},
+		bson.M{
+			"$set": bson.M{
+				"priority":   priority,
+				"updated_at": time.Now(),
+			},
+		},
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	return int(updateResult.ModifiedCount), nil
+}
+
 func verifyProjectAccess(ctx context.Context, userID, projectID primitive.ObjectID) error {
 	log.Printf("[AccessCheck] User: %s, Project: %s", userID.Hex(), projectID.Hex())
 
