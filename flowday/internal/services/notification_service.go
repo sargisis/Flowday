@@ -214,3 +214,116 @@ func CheckDueDates(userID primitive.ObjectID) error {
 
 	return nil
 }
+
+// ✅ ENHANCED: Batch notification operations
+
+// CreateBatchNotifications creates multiple notifications in one operation
+func CreateBatchNotifications(notifications []models.Notification) error {
+	if len(notifications) == 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Prepare documents for bulk insert
+	docs := make([]interface{}, len(notifications))
+	for i := range notifications {
+		notifications[i].ID = primitive.NewObjectID()
+		notifications[i].CreatedAt = time.Now()
+		docs[i] = notifications[i]
+	}
+
+	_, err := db.Notifications.InsertMany(ctx, docs)
+	if err != nil {
+		return fmt.Errorf("failed to create batch notifications: %w", err)
+	}
+
+	return nil
+}
+
+// MarkNotificationsRead marks multiple notifications as read
+func MarkNotificationsRead(notificationIDs []primitive.ObjectID, userID primitive.ObjectID) (int64, error) {
+	if len(notificationIDs) == 0 {
+		return 0, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := db.Notifications.UpdateMany(
+		ctx,
+		bson.M{
+			"_id":     bson.M{"$in": notificationIDs},
+			"user_id": userID,
+		},
+		bson.M{"$set": bson.M{"read": true}},
+	)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to mark notifications as read: %w", err)
+	}
+
+	return result.ModifiedCount, nil
+}
+
+// MarkAllNotificationsRead marks all unread notifications as read for a user
+func MarkAllNotificationsRead(userID primitive.ObjectID) (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := db.Notifications.UpdateMany(
+		ctx,
+		bson.M{
+			"user_id": userID,
+			"read":    false,
+		},
+		bson.M{"$set": bson.M{"read": true}},
+	)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to mark all notifications as read: %w", err)
+	}
+
+	return result.ModifiedCount, nil
+}
+
+// DeleteOldNotifications deletes read notifications older than specified days
+func DeleteOldNotifications(userID primitive.ObjectID, daysOld int) (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cutoffDate := time.Now().AddDate(0, 0, -daysOld)
+
+	result, err := db.Notifications.DeleteMany(
+		ctx,
+		bson.M{
+			"user_id":    userID,
+			"read":       true,
+			"created_at": bson.M{"$lt": cutoffDate},
+		},
+	)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete old notifications: %w", err)
+	}
+
+	return result.DeletedCount, nil
+}
+
+// GetUnreadCount returns the count of unread notifications for a user
+func GetUnreadCount(userID primitive.ObjectID) (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	count, err := db.Notifications.CountDocuments(ctx, bson.M{
+		"user_id": userID,
+		"read":    false,
+	})
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to count unread notifications: %w", err)
+	}
+
+	return count, nil
+}

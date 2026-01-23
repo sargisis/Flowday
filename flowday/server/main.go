@@ -135,8 +135,7 @@ func main() {
 	r.Use(middleware.UserRateLimitMiddleware())
 
 	// ✅ SECURITY: Add audit logging for important actions
-	// TODO: Implement AuditLogMiddleware when audit logging is needed
-	// r.Use(middleware.AuditLogMiddleware())
+	r.Use(middleware.AuditLogMiddleware())
 
 	// ✅ STABILITY: Add panic recovery middleware
 	r.Use(middleware.RecoveryMiddleware())

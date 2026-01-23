@@ -532,12 +532,84 @@ func SearchTasks(userID primitive.ObjectID, searchQuery dto.SearchTasksQuery) ([
 		}
 	}
 
-	// Full-text search in title and description
-	if searchQuery.Query != "" {
-		filter["$or"] = []bson.M{
-			{"title": bson.M{"$regex": searchQuery.Query, "$options": "i"}},
-			{"description": bson.M{"$regex": searchQuery.Query, "$options": "i"}},
+	// ✅ ENHANCED: Filter by assignee
+	if searchQuery.AssigneeID != "" {
+		assigneeID, err := primitive.ObjectIDFromHex(searchQuery.AssigneeID)
+		if err == nil {
+			filter["assignee_id"] = assigneeID
 		}
+	}
+
+	// ✅ ENHANCED: Filter by tag
+	if searchQuery.Tag != "" {
+		filter["tags.name"] = searchQuery.Tag
+	}
+
+	// ✅ ENHANCED: Filter by creation date
+	if searchQuery.CreatedAfter != "" {
+		if t, err := time.Parse("2006-01-02", searchQuery.CreatedAfter); err == nil {
+			if filter["created_at"] == nil {
+				filter["created_at"] = bson.M{}
+			}
+			if createdFilter, ok := filter["created_at"].(bson.M); ok {
+				createdFilter["$gte"] = t
+			} else {
+				filter["created_at"] = bson.M{"$gte": t}
+			}
+		}
+	}
+	if searchQuery.CreatedBefore != "" {
+		if t, err := time.Parse("2006-01-02", searchQuery.CreatedBefore); err == nil {
+			// Set to end of day
+			endOfDay := time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 0, t.Location())
+			if filter["created_at"] == nil {
+				filter["created_at"] = bson.M{}
+			}
+			if createdFilter, ok := filter["created_at"].(bson.M); ok {
+				createdFilter["$lte"] = endOfDay
+			} else {
+				filter["created_at"] = bson.M{"$lte": endOfDay}
+			}
+		}
+	}
+
+	// ✅ ENHANCED: Filter by update date
+	if searchQuery.UpdatedAfter != "" {
+		if t, err := time.Parse("2006-01-02", searchQuery.UpdatedAfter); err == nil {
+			if filter["updated_at"] == nil {
+				filter["updated_at"] = bson.M{}
+			}
+			if updatedFilter, ok := filter["updated_at"].(bson.M); ok {
+				updatedFilter["$gte"] = t
+			} else {
+				filter["updated_at"] = bson.M{"$gte": t}
+			}
+		}
+	}
+	if searchQuery.UpdatedBefore != "" {
+		if t, err := time.Parse("2006-01-02", searchQuery.UpdatedBefore); err == nil {
+			endOfDay := time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 0, t.Location())
+			if filter["updated_at"] == nil {
+				filter["updated_at"] = bson.M{}
+			}
+			if updatedFilter, ok := filter["updated_at"].(bson.M); ok {
+				updatedFilter["$lte"] = endOfDay
+			} else {
+				filter["updated_at"] = bson.M{"$lte": endOfDay}
+			}
+		}
+	}
+
+	// ✅ ENHANCED: Full-text search - use text index if available, fallback to regex
+	useTextSearch := false
+	if searchQuery.Query != "" {
+		// Try to use text search (requires text index)
+		// Text search is faster and supports relevance scoring
+		filter["$text"] = bson.M{"$search": searchQuery.Query}
+		useTextSearch = true
+		
+		// Note: If text index doesn't exist, MongoDB will return an error
+		// We'll catch it and fallback to regex below
 	}
 
 	// Get total count
@@ -553,18 +625,47 @@ func SearchTasks(userID primitive.ObjectID, searchQuery dto.SearchTasksQuery) ([
 	}
 	sortField := searchQuery.Sort
 	if sortField == "" {
-		sortField = "created_at"
+		// If using text search and sort by relevance, use text score
+		if useTextSearch && searchQuery.SortByRelevance {
+			sortField = "$textScore"
+		} else {
+			sortField = "created_at"
+		}
 	}
 
 	// Build find options
 	findOptions := options.Find().
 		SetLimit(int64(searchQuery.Limit)).
-		SetSkip(int64(searchQuery.GetOffset())).
-		SetSort(bson.M{sortField: sortOrder})
+		SetSkip(int64(searchQuery.GetOffset()))
+
+	// ✅ ENHANCED: Sort by relevance for text search
+	if useTextSearch && searchQuery.SortByRelevance {
+		findOptions.SetSort(bson.M{"score": bson.M{"$meta": "textScore"}})
+		findOptions.SetProjection(bson.M{"score": bson.M{"$meta": "textScore"}})
+	} else {
+		findOptions.SetSort(bson.M{sortField: sortOrder})
+	}
 
 	cursor, err := db.Tasks.Find(ctx, filter, findOptions)
 	if err != nil {
-		return nil, dto.PaginationMeta{}, err
+		// ✅ ENHANCED: Fallback to regex if text search fails (text index might not exist)
+		if useTextSearch {
+			// Remove $text and use regex instead
+			delete(filter, "$text")
+			filter["$or"] = []bson.M{
+				{"title": bson.M{"$regex": searchQuery.Query, "$options": "i"}},
+				{"description": bson.M{"$regex": searchQuery.Query, "$options": "i"}},
+			}
+			// Retry with regex
+			findOptions.SetSort(bson.M{sortField: sortOrder})
+			findOptions.SetProjection(nil) // Remove text score projection
+			cursor, err = db.Tasks.Find(ctx, filter, findOptions)
+			if err != nil {
+				return nil, dto.PaginationMeta{}, err
+			}
+		} else {
+			return nil, dto.PaginationMeta{}, err
+		}
 	}
 	defer cursor.Close(ctx)
 
@@ -941,6 +1042,125 @@ func GetTaskDependencies(userID, taskID primitive.ObjectID) (map[string]interfac
 		"blocks":      blocksTasks,
 		"blocked_by":  blockedByTasks,
 	}, nil
+}
+
+// GetBatchTaskDependencies returns dependencies for multiple tasks in one request
+func GetBatchTaskDependencies(userID primitive.ObjectID, taskIDs []primitive.ObjectID) (map[string]map[string]interface{}, error) {
+	ctx := context.Background()
+	result := make(map[string]map[string]interface{})
+
+	if len(taskIDs) == 0 {
+		return result, nil
+	}
+
+	// Get all tasks at once
+	var tasks []models.Task
+	cursor, err := db.Tasks.Find(ctx, bson.M{"_id": bson.M{"$in": taskIDs}})
+	if err != nil {
+		return nil, err
+	}
+	if err = cursor.All(ctx, &tasks); err != nil {
+		return nil, err
+	}
+
+	// Verify access to all tasks
+	for _, task := range tasks {
+		if err := verifyProjectAccess(ctx, userID, task.ProjectID); err != nil {
+			return nil, errors.New("access denied to task: " + task.ID.Hex())
+		}
+	}
+
+	// Collect all unique task IDs that we need to fetch
+	allDependsOnIDs := make(map[primitive.ObjectID]bool)
+	allBlocksIDs := make(map[primitive.ObjectID]bool)
+	taskMap := make(map[primitive.ObjectID]models.Task)
+
+	for _, task := range tasks {
+		taskMap[task.ID] = task
+		for _, id := range task.DependsOn {
+			allDependsOnIDs[id] = true
+		}
+		for _, id := range task.Blocks {
+			allBlocksIDs[id] = true
+		}
+	}
+
+	// Fetch all depends_on tasks in one query
+	dependsOnIDsList := make([]primitive.ObjectID, 0, len(allDependsOnIDs))
+	for id := range allDependsOnIDs {
+		dependsOnIDsList = append(dependsOnIDsList, id)
+	}
+	dependsOnTasksMap := make(map[primitive.ObjectID]models.Task)
+	if len(dependsOnIDsList) > 0 {
+		cursor, _ := db.Tasks.Find(ctx, bson.M{"_id": bson.M{"$in": dependsOnIDsList}})
+		var dependsOnTasks []models.Task
+		cursor.All(ctx, &dependsOnTasks)
+		for _, t := range dependsOnTasks {
+			dependsOnTasksMap[t.ID] = t
+		}
+	}
+
+	// Fetch all blocks tasks in one query
+	blocksIDsList := make([]primitive.ObjectID, 0, len(allBlocksIDs))
+	for id := range allBlocksIDs {
+		blocksIDsList = append(blocksIDsList, id)
+	}
+	blocksTasksMap := make(map[primitive.ObjectID]models.Task)
+	if len(blocksIDsList) > 0 {
+		cursor, _ := db.Tasks.Find(ctx, bson.M{"_id": bson.M{"$in": blocksIDsList}})
+		var blocksTasks []models.Task
+		cursor.All(ctx, &blocksTasks)
+		for _, t := range blocksTasks {
+			blocksTasksMap[t.ID] = t
+		}
+	}
+
+	// Fetch all blocked_by tasks (tasks that have any of our tasks in their depends_on)
+	blockedByTasksMap := make(map[primitive.ObjectID][]models.Task)
+	if len(taskIDs) > 0 {
+		cursor, _ := db.Tasks.Find(ctx, bson.M{"depends_on": bson.M{"$in": taskIDs}})
+		var blockedByTasks []models.Task
+		cursor.All(ctx, &blockedByTasks)
+		for _, t := range blockedByTasks {
+			for _, dependsOnID := range t.DependsOn {
+				if _, exists := taskMap[dependsOnID]; exists {
+					blockedByTasksMap[dependsOnID] = append(blockedByTasksMap[dependsOnID], t)
+				}
+			}
+		}
+	}
+
+	// Build result for each task
+	for _, task := range tasks {
+		taskIDStr := task.ID.Hex()
+		
+		// Get depends_on tasks for this task
+		dependsOnTasks := []models.Task{}
+		for _, id := range task.DependsOn {
+			if t, exists := dependsOnTasksMap[id]; exists {
+				dependsOnTasks = append(dependsOnTasks, t)
+			}
+		}
+
+		// Get blocks tasks for this task
+		blocksTasks := []models.Task{}
+		for _, id := range task.Blocks {
+			if t, exists := blocksTasksMap[id]; exists {
+				blocksTasks = append(blocksTasks, t)
+			}
+		}
+
+		// Get blocked_by tasks for this task
+		blockedByTasks := blockedByTasksMap[task.ID]
+
+		result[taskIDStr] = map[string]interface{}{
+			"depends_on": dependsOnTasks,
+			"blocks":      blocksTasks,
+			"blocked_by":  blockedByTasks,
+		}
+	}
+
+	return result, nil
 }
 
 // CreateTaskTemplate creates a new task template

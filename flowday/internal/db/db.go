@@ -36,6 +36,7 @@ var (
 	TaskTemplates *mongo.Collection
 	SavedViews    *mongo.Collection
 	TimeEntries   *mongo.Collection
+	AuditLogs     *mongo.Collection
 )
 
 func Connect() {
@@ -88,6 +89,7 @@ func Connect() {
 	TaskTemplates = Database.Collection("task_templates")
 	SavedViews = Database.Collection("saved_views")
 	TimeEntries = Database.Collection("time_entries")
+	AuditLogs = Database.Collection("audit_logs")
 
 	// ✅ PERFORMANCE: Create indexes for faster queries
 	if err := createIndexes(ctx); err != nil {
@@ -114,6 +116,9 @@ func createIndexes(ctx context.Context) error {
 	projectsIndexes := []mongo.IndexModel{
 		{Keys: bson.D{{Key: "user_id", Value: 1}}},
 		{Keys: bson.D{{Key: "created_at", Value: -1}}},
+		{Keys: bson.D{{Key: "updated_at", Value: -1}}},
+		// Compound index: user_id + created_at (for user's projects sorted by date)
+		{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "created_at", Value: -1}}},
 	}
 	if _, err := Projects.Indexes().CreateMany(ctx, projectsIndexes); err != nil {
 		return err
@@ -311,11 +316,36 @@ func createIndexes(ctx context.Context) error {
 		{Keys: bson.D{{Key: "depends_on", Value: 1}}},
 		{Keys: bson.D{{Key: "blocks", Value: 1}}},
 		{Keys: bson.D{{Key: "template_id", Value: 1}}},
+		{Keys: bson.D{{Key: "updated_at", Value: -1}}},
 		// Compound index: project_id + assignee_id + status
 		{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "assignee_id", Value: 1}, {Key: "status", Value: 1}}},
+		// Compound index: project_id + due_date (for date range queries)
+		{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "due_date", Value: 1}}},
+		// Compound index: project_id + updated_at (for recent tasks)
+		{Keys: bson.D{{Key: "project_id", Value: 1}, {Key: "updated_at", Value: -1}}},
+		// Text index for full-text search on title and description
+		{Keys: bson.D{{Key: "title", Value: "text"}, {Key: "description", Value: "text"}}, Options: options.Index().SetName("task_text_search")},
 	}
 	if _, err := Tasks.Indexes().CreateMany(ctx, additionalTaskIndexes); err != nil {
-		return err
+		// Text index might fail if already exists or if collection has data with different structure
+		// Log but don't fail - text search is optional
+		logger.Log.WithError(err).Warn("Some task indexes might already exist or failed to create")
+	}
+
+	// AuditLogs collection indexes
+	auditLogsIndexes := []mongo.IndexModel{
+		{Keys: bson.D{{Key: "user_id", Value: 1}}},
+		{Keys: bson.D{{Key: "action", Value: 1}}},
+		{Keys: bson.D{{Key: "resource", Value: 1}}},
+		{Keys: bson.D{{Key: "timestamp", Value: -1}}},
+		{Keys: bson.D{{Key: "success", Value: 1}}},
+		// Compound index for common queries: user_id + timestamp
+		{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "timestamp", Value: -1}}},
+		// Compound index: resource + resource_id + timestamp
+		{Keys: bson.D{{Key: "resource", Value: 1}, {Key: "resource_id", Value: 1}, {Key: "timestamp", Value: -1}}},
+	}
+	if _, err := AuditLogs.Indexes().CreateMany(ctx, auditLogsIndexes); err != nil {
+		logger.Log.WithError(err).Warn("Failed to create audit_logs indexes")
 	}
 
 	logger.Log.Info("✅ Database indexes created successfully")
