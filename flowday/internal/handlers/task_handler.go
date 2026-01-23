@@ -35,11 +35,11 @@ func CreateTask(c *gin.Context) {
 		return
 	}
 
+	// Use the new helper method that handles null/empty dates
+	dueDate := req.GetDueDateTimePtr()
+	
 	// Default due date to "Today" if not provided
-	var dueDate *time.Time
-	if req.DueDate != nil {
-		dueDate = req.DueDate
-	} else {
+	if dueDate == nil {
 		now := time.Now()
 		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 		dueDate = &today
@@ -181,7 +181,8 @@ func UpdateTask(c *gin.Context) {
 		updates["description"] = *req.Description
 	}
 	if req.DueDate != nil {
-		updates["due_date"] = req.DueDate
+		dueDate := req.GetDueDateTimePtr()
+		updates["due_date"] = dueDate
 	}
 
 	userID, _ := c.Get("user_id")
