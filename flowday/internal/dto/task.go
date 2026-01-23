@@ -182,3 +182,14 @@ type SetRecurrenceRequest struct {
 	DaysOfWeek []int      `json:"days_of_week"` // For weekly: [1,3,5] = Mon, Wed, Fri
 	DayOfMonth *int       `json:"day_of_month"` // For monthly
 }
+
+// Bulk Update DTOs
+type BulkUpdateStatusRequest struct {
+	TaskIDs []string `json:"task_ids" binding:"required"`
+	Status  string   `json:"status" binding:"required"`
+}
+
+type BulkUpdatePriorityRequest struct {
+	TaskIDs []string `json:"task_ids" binding:"required"`
+	Priority string   `json:"priority" binding:"required"`
+}

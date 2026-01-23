@@ -368,6 +368,170 @@ func BulkDeleteTasks(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func BulkUpdateTasksStatus(c *gin.Context) {
+	var req dto.BulkUpdateStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.TaskIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "task_ids cannot be empty"})
+		return
+	}
+
+	var objectIDs []primitive.ObjectID
+	for _, id := range req.TaskIDs {
+		oid, err := primitive.ObjectIDFromHex(id)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format: " + id})
+			return
+		}
+		objectIDs = append(objectIDs, oid)
+	}
+
+	userID, _ := c.Get("user_id")
+	updatedCount, err := services.BulkUpdateTasksStatus(userID.(primitive.ObjectID), objectIDs, req.Status)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+
+	// ✅ REAL-TIME: Broadcast bulk update via WebSocket
+	go func() {
+		// Get all updated tasks to broadcast
+		var tasks []models.Task
+		ctx := context.Background()
+		cursor, _ := db.Tasks.Find(ctx, bson.M{"_id": bson.M{"$in": objectIDs}})
+		cursor.All(ctx, &tasks)
+
+		// Collect unique project IDs
+		projectIDs := make(map[primitive.ObjectID]bool)
+		for _, task := range tasks {
+			projectIDs[task.ProjectID] = true
+		}
+
+		// Broadcast to all project members
+		for projectID := range projectIDs {
+			var project models.Project
+			if err := db.Projects.FindOne(ctx, bson.M{"_id": projectID}).Decode(&project); err == nil {
+				userIDs := []primitive.ObjectID{project.UserID}
+				cursor, _ := db.ProjectMembers.Find(ctx, bson.M{
+					"project_id": projectID,
+					"status":     "accepted",
+				})
+				var members []models.ProjectMember
+				cursor.All(ctx, &members)
+				for _, member := range members {
+					userIDs = append(userIDs, member.UserID)
+				}
+
+				// Broadcast update for each task
+				for _, task := range tasks {
+					if task.ProjectID == projectID {
+						taskData := map[string]interface{}{
+							"task_id":    task.ID.Hex(),
+							"title":      task.Title,
+							"project_id": task.ProjectID.Hex(),
+							"status":     task.Status,
+							"priority":   task.Priority,
+							"bulk_update": true,
+						}
+						websocket.BroadcastTaskUpdate(userIDs, taskData)
+					}
+				}
+			}
+		}
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "Tasks updated successfully",
+		"updated_count": updatedCount,
+	})
+}
+
+func BulkUpdateTasksPriority(c *gin.Context) {
+	var req dto.BulkUpdatePriorityRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.TaskIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "task_ids cannot be empty"})
+		return
+	}
+
+	var objectIDs []primitive.ObjectID
+	for _, id := range req.TaskIDs {
+		oid, err := primitive.ObjectIDFromHex(id)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id format: " + id})
+			return
+		}
+		objectIDs = append(objectIDs, oid)
+	}
+
+	userID, _ := c.Get("user_id")
+	updatedCount, err := services.BulkUpdateTasksPriority(userID.(primitive.ObjectID), objectIDs, req.Priority)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+
+	// ✅ REAL-TIME: Broadcast bulk update via WebSocket
+	go func() {
+		// Get all updated tasks to broadcast
+		var tasks []models.Task
+		ctx := context.Background()
+		cursor, _ := db.Tasks.Find(ctx, bson.M{"_id": bson.M{"$in": objectIDs}})
+		cursor.All(ctx, &tasks)
+
+		// Collect unique project IDs
+		projectIDs := make(map[primitive.ObjectID]bool)
+		for _, task := range tasks {
+			projectIDs[task.ProjectID] = true
+		}
+
+		// Broadcast to all project members
+		for projectID := range projectIDs {
+			var project models.Project
+			if err := db.Projects.FindOne(ctx, bson.M{"_id": projectID}).Decode(&project); err == nil {
+				userIDs := []primitive.ObjectID{project.UserID}
+				cursor, _ := db.ProjectMembers.Find(ctx, bson.M{
+					"project_id": projectID,
+					"status":     "accepted",
+				})
+				var members []models.ProjectMember
+				cursor.All(ctx, &members)
+				for _, member := range members {
+					userIDs = append(userIDs, member.UserID)
+				}
+
+				// Broadcast update for each task
+				for _, task := range tasks {
+					if task.ProjectID == projectID {
+						taskData := map[string]interface{}{
+							"task_id":    task.ID.Hex(),
+							"title":      task.Title,
+							"project_id": task.ProjectID.Hex(),
+							"status":     task.Status,
+							"priority":   task.Priority,
+							"bulk_update": true,
+						}
+						websocket.BroadcastTaskUpdate(userIDs, taskData)
+					}
+				}
+			}
+		}
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "Tasks updated successfully",
+		"updated_count": updatedCount,
+	})
+}
+
 func GetTask(c *gin.Context) {
 	taskID, err := primitive.ObjectIDFromHex(c.Param("id"))
 	if err != nil {

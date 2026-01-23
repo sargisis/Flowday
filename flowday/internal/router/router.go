@@ -97,6 +97,8 @@ func Setup(r *gin.Engine) {
 		tasksGroup.GET("/search", handlers.SearchTasks) // ?q=keyword&project_id=xxx&status=in_progress&priority=high
 		tasksGroup.POST("", handlers.CreateTask)
 		tasksGroup.POST("/bulk-delete", handlers.BulkDeleteTasks)
+		tasksGroup.POST("/bulk-update-status", handlers.BulkUpdateTasksStatus)
+		tasksGroup.POST("/bulk-update-priority", handlers.BulkUpdateTasksPriority)
 
 		// ✅ calendar API
 		tasksGroup.GET("/by-date", handlers.GetTasksByDate) // ?date=YYYY-MM-DD
