@@ -18,6 +18,11 @@ import (
 	"flowday/internal/models"
 )
 
+type ChatStreamResponse struct {
+	Content string `json:"content"`
+	Done    bool   `json:"done"`
+}
+
 var (
 	groqClient       *openai.Client
 	FreeQuotaLimit   = 10
@@ -274,6 +279,150 @@ func IncrementQuota(ctx context.Context, userID primitive.ObjectID, amount int) 
 		"$inc": bson.M{"ai_quota_used": amount},
 	})
 	return err
+}
+
+func ChatStream(ctx context.Context, userID primitive.ObjectID, message string, respChan chan<- string, errChan chan<- error) {
+	if groqClient == nil {
+		errChan <- fmt.Errorf("AI Service not initialized")
+		return
+	}
+
+	defer close(respChan)
+
+	// 1. Check Quota
+	allowed, remaining, err := CheckQuota(ctx, userID)
+	if err != nil {
+		errChan <- fmt.Errorf("failed to check quota: %w", err)
+		return
+	}
+	if !allowed {
+		errChan <- fmt.Errorf("quota_exceeded")
+		return
+	}
+
+	// 2. Get/Create Conversation
+	coll := db.Database.Collection("ai_conversations")
+	var conv models.Conversation
+	err = coll.FindOne(ctx, bson.M{"user_id": userID}).Decode(&conv)
+
+	if err == mongo.ErrNoDocuments {
+		conv = models.Conversation{
+			ID:        primitive.NewObjectID(),
+			UserID:    userID,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Messages:  []models.Message{},
+		}
+		_, err = coll.InsertOne(ctx, conv)
+		if err != nil {
+			errChan <- fmt.Errorf("failed to create conversation: %w", err)
+			return
+		}
+	} else if err != nil {
+		errChan <- fmt.Errorf("failed to fetch conversation: %w", err)
+		return
+	}
+
+	// 3. Prepare Context with Task Awareness
+	tasks, _ := GetUserTasks(userID)
+	taskContext := ""
+	if len(tasks) > 0 {
+		taskContext = "\nCURRENT TASKS:\n"
+		for i, t := range tasks {
+			if i >= 10 {
+				break
+			} // Limit to 10
+			taskContext += fmt.Sprintf("- [%s] %s (%s)\n", t.Status, t.Title, t.Priority)
+		}
+	}
+
+	systemPrompt := `You are FlowBot, the AI heart of the Flowday OS. You are helpful, concise, and focused on helping the user stay in "Flow".
+You have access to the user's current tasks to provide better advice.
+
+IMPORTANT FORMATTING RULES:
+- Use **Markdown** for everything.
+- Break long text into short, readable paragraphs (max 2 sentences).
+- Use **bullet_points** for lists.
+- If creating tasks, output strictly a JSON array (wrapped in ` + "```json" + `).` + taskContext
+
+	aiMessages := []openai.ChatCompletionMessage{
+		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+	}
+
+	startIdx := 0
+	if len(conv.Messages) > 10 {
+		startIdx = len(conv.Messages) - 10
+	}
+	for i := startIdx; i < len(conv.Messages); i++ {
+		msg := conv.Messages[i]
+		aiMessages = append(aiMessages, openai.ChatCompletionMessage{
+			Role:    msg.Role,
+			Content: msg.Content,
+		})
+	}
+
+	aiMessages = append(aiMessages, openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleUser,
+		Content: message,
+	})
+
+	// 4. Create Stream
+	stream, err := groqClient.CreateChatCompletionStream(
+		ctx,
+		openai.ChatCompletionRequest{
+			Model:    "llama-3.3-70b-versatile",
+			Messages: aiMessages,
+			Stream:   true,
+		},
+	)
+	if err != nil {
+		errChan <- fmt.Errorf("failed to create stream: %w", err)
+		return
+	}
+	defer stream.Close()
+
+	fullReply := ""
+	for {
+		response, err := stream.Recv()
+		if err != nil {
+			if err.Error() == "EOF" {
+				break
+			}
+			errChan <- fmt.Errorf("stream receive error: %w", err)
+			return
+		}
+
+		if len(response.Choices) > 0 {
+			content := response.Choices[0].Delta.Content
+			fullReply += content
+			respChan <- content
+		}
+	}
+
+	// 5. Save History & Increment Quota (in background to not block stream end)
+	go func() {
+		// Use a fresh context for background saving
+		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Hour)
+		defer cancel()
+
+		newMessages := []models.Message{
+			{Role: "user", Content: message, Timestamp: time.Now()},
+			{Role: "assistant", Content: fullReply, Timestamp: time.Now()},
+		}
+
+		_, _ = coll.UpdateOne(
+			bgCtx,
+			bson.M{"_id": conv.ID},
+			bson.M{
+				"$push": bson.M{"messages": bson.M{"$each": newMessages}},
+				"$set":  bson.M{"updated_at": time.Now()},
+			},
+		)
+
+		if remaining != -1 {
+			_ = IncrementQuota(bgCtx, userID, 1) // Base cost for chat
+		}
+	}()
 }
 
 func Chat(ctx context.Context, userID primitive.ObjectID, message string) (string, error) {
