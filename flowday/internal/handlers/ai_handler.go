@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"io"
 	"log"
 	"net/http"
 
@@ -166,6 +167,62 @@ func HandleChat(c *gin.Context) {
 	})
 }
 
+// HandleChatStream handles AI chat with SSE streaming
+func HandleChatStream(c *gin.Context) {
+	var body struct {
+		Message string `json:"message" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "message is required"})
+		return
+	}
+
+	userID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	// Set headers for SSE
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("Transfer-Encoding", "chunked")
+
+	respChan := make(chan string)
+	errChan := make(chan error)
+
+	// Run AI service in background
+	go services.ChatStream(c.Request.Context(), userID.(primitive.ObjectID), body.Message, respChan, errChan)
+
+	// Stream response to client
+	c.Stream(func(w io.Writer) bool {
+		select {
+		case msg, ok := <-respChan:
+			if !ok {
+				// Stream closed normally
+				c.SSEvent("done", "{}")
+				return false
+			}
+			c.SSEvent("message", gin.H{"content": msg})
+			return true
+		case err := <-errChan:
+			if err != nil {
+				if err.Error() == "quota_exceeded" {
+					c.SSEvent("error", gin.H{"error": "Daily free quota exceeded. Upgrade to Pro."})
+				} else {
+					log.Printf("[AI] Stream error: %v", err)
+					c.SSEvent("error", gin.H{"error": "Failed to process message"})
+				}
+			}
+			return false
+		case <-c.Request.Context().Done():
+			// Client disconnected
+			return false
+		}
+	})
+}
+
 // HandleGetHistory returns the chat history for the user
 func HandleGetHistory(c *gin.Context) {
 	userID, ok := c.Get("user_id")
@@ -204,6 +261,27 @@ func HandleGetQuota(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"allowed":   allowed,
 		"remaining": remaining, // -1 means unlimited
+	})
+}
+
+// HandleDeleteHistory clears the AI chat history for the user
+func HandleDeleteHistory(c *gin.Context) {
+	userID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	coll := db.Database.Collection("ai_conversations")
+	_, err := coll.DeleteOne(c.Request.Context(), bson.M{"user_id": userID.(primitive.ObjectID)})
+	if err != nil {
+		log.Printf("[AI] Delete history error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear history"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Chat history cleared successfully",
 	})
 }
 

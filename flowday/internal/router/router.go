@@ -149,7 +149,9 @@ func Setup(r *gin.Engine) {
 	{
 		aiGroup.POST("/health-advice", handlers.GetHealthAdvice)
 		aiGroup.POST("/chat", handlers.HandleChat)
+		aiGroup.POST("/chat/stream", handlers.HandleChatStream)
 		aiGroup.GET("/history", handlers.HandleGetHistory)
+		aiGroup.DELETE("/history", handlers.HandleDeleteHistory)
 		aiGroup.GET("/quota", handlers.HandleGetQuota)
 		aiGroup.GET("/insights", handlers.HandleGetInsights)
 	}
