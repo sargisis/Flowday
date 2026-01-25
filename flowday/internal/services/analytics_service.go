@@ -18,16 +18,16 @@ import (
 // TaskAnalytics represents comprehensive task analytics
 type TaskAnalytics struct {
 	// Basic stats
-	TotalTasks      int64   `json:"total_tasks"`
-	DoneTasks       int64   `json:"done_tasks"`
-	InProgressTasks int64   `json:"in_progress_tasks"`
-	BlockedTasks    int64   `json:"blocked_tasks"`
-	OverdueTasks    int64   `json:"overdue_tasks"`
+	TotalTasks      int64 `json:"total_tasks"`
+	DoneTasks       int64 `json:"done_tasks"`
+	InProgressTasks int64 `json:"in_progress_tasks"`
+	BlockedTasks    int64 `json:"blocked_tasks"`
+	OverdueTasks    int64 `json:"overdue_tasks"`
 
 	// Performance metrics
 	AverageCompletionTime float64 `json:"average_completion_time_hours"` // Average time from creation to completion
-	CompletionRate       float64 `json:"completion_rate"`                // Percentage of tasks completed
-	Velocity             float64 `json:"velocity"`                       // Tasks completed per day
+	CompletionRate        float64 `json:"completion_rate"`               // Percentage of tasks completed
+	Velocity              float64 `json:"velocity"`                      // Tasks completed per day
 
 	// Priority distribution
 	HighPriorityTasks   int64 `json:"high_priority_tasks"`
@@ -36,10 +36,17 @@ type TaskAnalytics struct {
 
 	// Time-based metrics
 	TasksByDayOfWeek map[string]int64 `json:"tasks_by_day_of_week"` // Tasks completed by day of week
-	TasksByDate      []DateTaskCount  `json:"tasks_by_date"`        // Tasks completed by date
+	TaskTrends       []TaskTrend      `json:"task_trends"`          // Daily performance trends
+	TasksByDate      []DateTaskCount  `json:"tasks_by_date"`        // Legacy field (deprecated)
 
 	// Top tasks
 	TopPriorityTasks []TaskSummary `json:"top_priority_tasks"` // Top 10 high priority tasks
+}
+
+type TaskTrend struct {
+	Date      string `json:"date"`
+	Created   int    `json:"created"`
+	Completed int    `json:"completed"`
 }
 
 type DateTaskCount struct {
@@ -315,6 +322,37 @@ func GetTaskAnalytics(userID primitive.ObjectID, projectID *primitive.ObjectID, 
 						analytics.TasksByDayOfWeek[dayName] = int64(count)
 					}
 				}
+			}
+		}
+	}
+
+	// Get daily trends (Created vs Completed)
+	trendsPipeline := mongo.Pipeline{
+		{{"$match", bson.M{"project_id": bson.M{"$in": projectIDs}}}},
+		{{"$group", bson.D{
+			{"_id", bson.D{{"$dateToString", bson.D{{"format", "%Y-%m-%d"}, {"date", "$created_at"}}}}},
+			{"created", bson.D{{"$sum", 1}}},
+			{"completed", bson.D{{"$sum", bson.D{{"$cond", bson.A{bson.D{{"$eq", bson.A{"$status", "Done"}}}, 1, 0}}}}}},
+		}}},
+		{{"$sort", bson.D{{"_id", 1}}}},
+		{{"$limit", 31}}, // Last month approximately
+	}
+
+	trendCursor, err := db.Tasks.Aggregate(ctx, trendsPipeline)
+	if err == nil {
+		defer trendCursor.Close(ctx)
+		for trendCursor.Next(ctx) {
+			var result struct {
+				ID        string `bson:"_id"`
+				Created   int    `bson:"created"`
+				Completed int    `bson:"completed"`
+			}
+			if err := trendCursor.Decode(&result); err == nil {
+				analytics.TaskTrends = append(analytics.TaskTrends, TaskTrend{
+					Date:      result.ID,
+					Created:   result.Created,
+					Completed: result.Completed,
+				})
 			}
 		}
 	}

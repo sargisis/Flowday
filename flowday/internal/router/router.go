@@ -79,7 +79,10 @@ func Setup(r *gin.Engine) {
 	// Protected files (task/message attachments) - use different path if needed
 	// protected.GET("/uploads/attachments/*filepath", handlers.ServeUploadedFile)
 
-	// ---------- PROJECTS ----------
+	// ---------- ANALYTICS ----------
+	protected.GET("/analytics", handlers.GetTaskAnalytics)
+
+	// Public Slack OAuth callback (no auth required)
 	projectsGroup := v1.Group("/projects")
 	projectsGroup.Use(middleware.AuthMiddleware())
 	{
@@ -109,7 +112,6 @@ func Setup(r *gin.Engine) {
 
 		// ✅ stats API
 		tasksGroup.GET("/stats", handlers.GetTaskStats)
-		tasksGroup.GET("/analytics", handlers.GetTaskAnalytics) // ?project_id=xxx&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
 
 		// 💬 Comments (must be before generic :id routes to avoid conflict)
 		tasksGroup.POST("/:id/comments", handlers.CreateCommentHandler)

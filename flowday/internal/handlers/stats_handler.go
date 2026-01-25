@@ -35,7 +35,12 @@ func GetTaskAnalytics(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("user_id")
+	val, exists := c.Get("user_id")
+	if !exists || val == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID := val.(primitive.ObjectID)
 
 	// Parse optional project ID
 	var projectID *primitive.ObjectID
@@ -69,7 +74,7 @@ func GetTaskAnalytics(c *gin.Context) {
 	}
 
 	analytics, err := services.GetTaskAnalytics(
-		userID.(primitive.ObjectID),
+		userID,
 		projectID,
 		startDate,
 		endDate,
