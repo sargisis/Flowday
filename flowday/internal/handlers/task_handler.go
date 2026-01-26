@@ -37,7 +37,7 @@ func CreateTask(c *gin.Context) {
 
 	// Use the new helper method that handles null/empty dates
 	dueDate := req.GetDueDateTimePtr()
-	
+
 	// Default due date to "Today" if not provided
 	if dueDate == nil {
 		now := time.Now()
@@ -45,7 +45,18 @@ func CreateTask(c *gin.Context) {
 		dueDate = &today
 	}
 
-	userID, _ := c.Get("user_id")
+	// Safe type assertion for userID
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(primitive.ObjectID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID format"})
+		return
+	}
+
 	task := models.Task{
 		Title:       req.Title,
 		Description: req.Description,
@@ -55,22 +66,22 @@ func CreateTask(c *gin.Context) {
 		Status:      "todo",
 	}
 
-	if err := services.CreateTask(userID.(primitive.ObjectID), &task); err != nil {
+	if err := services.CreateTask(userID, &task); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
 
-	// ✅ NEW: Process mentions in task description
+	// ✅ NEW: Process mentions in task description (Safe Goroutine)
 	if task.Description != "" {
-		go func() {
-			services.ProcessTaskMentions(task.ID, task.Description, userID.(primitive.ObjectID))
-		}()
+		utils.Go(func() {
+			services.ProcessTaskMentions(task.ID, task.Description, userID)
+		})
 	}
 
-	services.LogActivity(userID.(primitive.ObjectID), models.ActivityTaskCreated, "Created task: "+task.Title, map[string]string{"task_id": task.ID.Hex()})
+	services.LogActivity(userID, models.ActivityTaskCreated, "Created task: "+task.Title, map[string]string{"task_id": task.ID.Hex()})
 
-	// ✅ REAL-TIME: Broadcast task creation via WebSocket
-	go func() {
+	// ✅ REAL-TIME: Broadcast task creation via WebSocket (Safe Goroutine)
+	utils.Go(func() {
 		// Get project owner and members for broadcast
 		var project models.Project
 		if err := db.Projects.FindOne(context.Background(), bson.M{"_id": projectID}).Decode(&project); err == nil {
@@ -95,10 +106,11 @@ func CreateTask(c *gin.Context) {
 			}
 			websocket.BroadcastTaskCreate(userIDs, taskData)
 		}
-	}()
+	})
 
 	// Send Slack notification (OAuth preferred, fallback to webhook)
-	go func() {
+	// Send Slack notification (OAuth preferred, fallback to webhook)
+	utils.Go(func() {
 		var user models.User
 		if err := db.Users.FindOne(context.Background(), bson.M{"_id": userID}).Decode(&user); err == nil {
 			var project models.Project
@@ -119,7 +131,7 @@ func CreateTask(c *gin.Context) {
 				}
 			}
 		}
-	}() // This fixed the "expression in go must be function call" lint error by calling the goroutine properly.
+	}) // This fixed the "expression in go must be function call" lint error by calling the goroutine properly.
 
 	c.JSON(http.StatusCreated, task)
 }
@@ -435,11 +447,11 @@ func BulkUpdateTasksStatus(c *gin.Context) {
 				for _, task := range tasks {
 					if task.ProjectID == projectID {
 						taskData := map[string]interface{}{
-							"task_id":    task.ID.Hex(),
-							"title":      task.Title,
-							"project_id": task.ProjectID.Hex(),
-							"status":     task.Status,
-							"priority":   task.Priority,
+							"task_id":     task.ID.Hex(),
+							"title":       task.Title,
+							"project_id":  task.ProjectID.Hex(),
+							"status":      task.Status,
+							"priority":    task.Priority,
 							"bulk_update": true,
 						}
 						websocket.BroadcastTaskUpdate(userIDs, taskData)
@@ -517,11 +529,11 @@ func BulkUpdateTasksPriority(c *gin.Context) {
 				for _, task := range tasks {
 					if task.ProjectID == projectID {
 						taskData := map[string]interface{}{
-							"task_id":    task.ID.Hex(),
-							"title":      task.Title,
-							"project_id": task.ProjectID.Hex(),
-							"status":     task.Status,
-							"priority":   task.Priority,
+							"task_id":     task.ID.Hex(),
+							"title":       task.Title,
+							"project_id":  task.ProjectID.Hex(),
+							"status":      task.Status,
+							"priority":    task.Priority,
 							"bulk_update": true,
 						}
 						websocket.BroadcastTaskUpdate(userIDs, taskData)
