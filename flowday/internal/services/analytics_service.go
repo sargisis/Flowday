@@ -383,3 +383,75 @@ func GetTaskAnalytics(userID primitive.ObjectID, projectID *primitive.ObjectID, 
 
 	return analytics, nil
 }
+
+// GetActivityData returns task activity counts over time
+func GetActivityData(userID primitive.ObjectID, projectID *primitive.ObjectID, days int) ([]DateTaskCount, error) {
+	ctx := context.Background()
+
+	// Get user's projects
+	projects, err := GetProjects(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	projectIDs := make([]primitive.ObjectID, len(projects))
+	for i, p := range projects {
+		projectIDs[i] = p.ID
+	}
+
+	// Filter by project if specified
+	if projectID != nil {
+		hasAccess := false
+		for _, pid := range projectIDs {
+			if pid == *projectID {
+				hasAccess = true
+				break
+			}
+		}
+		if hasAccess {
+			projectIDs = []primitive.ObjectID{*projectID}
+		}
+	}
+
+	if len(projectIDs) == 0 {
+		return []DateTaskCount{}, nil
+	}
+
+	// Calculate start date
+	startTime := time.Now().AddDate(0, 0, -days)
+
+	pipeline := mongo.Pipeline{
+		{{"$match", bson.M{
+			"project_id": bson.M{"$in": projectIDs},
+			"status":     "Done",
+			"updated_at": bson.M{"$gte": startTime},
+		}}},
+		{{"$group", bson.D{
+			{"_id", bson.D{{"$dateToString", bson.D{{"format", "%Y-%m-%d"}, {"date", "$updated_at"}}}}},
+			{"count", bson.D{{"$sum", 1}}},
+		}}},
+		{{"$sort", bson.D{{"_id", 1}}}},
+	}
+
+	cursor, err := db.Tasks.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []DateTaskCount
+	for cursor.Next(ctx) {
+		var res struct {
+			Date  string `bson:"_id"`
+			Count int64  `bson:"count"`
+		}
+		if err := cursor.Decode(&res); err == nil {
+			results = append(results, DateTaskCount{
+				Date:  res.Date,
+				Count: res.Count,
+			})
+		}
+	}
+
+	return results, nil
+}
