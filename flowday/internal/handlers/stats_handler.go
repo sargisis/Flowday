@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"flowday/internal/dto"
@@ -10,6 +11,40 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
+
+// GetActivityData handles GET /api/v1/analytics/activity
+func GetActivityData(c *gin.Context) {
+	projectIDStr := c.Query("project_id")
+	daysStr := c.DefaultQuery("days", "365")
+
+	val, exists := c.Get("user_id")
+	if !exists || val == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID := val.(primitive.ObjectID)
+
+	var projectID *primitive.ObjectID
+	if projectIDStr != "" {
+		pid, err := primitive.ObjectIDFromHex(projectIDStr)
+		if err == nil {
+			projectID = &pid
+		}
+	}
+
+	days, _ := strconv.Atoi(daysStr)
+	if days <= 0 {
+		days = 365
+	}
+
+	data, err := services.GetActivityData(userID, projectID, days)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, data)
+}
 
 func GetTaskStats(c *gin.Context) {
 	userID, _ := c.Get("user_id")

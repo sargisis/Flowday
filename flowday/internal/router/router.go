@@ -81,6 +81,7 @@ func Setup(r *gin.Engine) {
 
 	// ---------- ANALYTICS ----------
 	protected.GET("/analytics", handlers.GetTaskAnalytics)
+	protected.GET("/analytics/activity", handlers.GetActivityData)
 
 	// Public Slack OAuth callback (no auth required)
 	projectsGroup := v1.Group("/projects")
