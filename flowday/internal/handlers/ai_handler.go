@@ -43,18 +43,31 @@ func DecomposeTask(c *gin.Context) {
 	}
 
 	createdSubtasks := []models.Task{}
+	var subtaskIDs []primitive.ObjectID
+
 	for _, title := range subtaskTitles {
 		newSubtask := models.Task{
 			Title:     title,
 			Status:    "todo",
 			Priority:  task.Priority,
 			ProjectID: task.ProjectID,
+			// New subtasks block the original task
+			Blocks: []primitive.ObjectID{task.ID},
 		}
 		if err := services.CreateTask(userID.(primitive.ObjectID), &newSubtask); err != nil {
 			log.Printf("[AI] Failed to create subtask: %v", err)
 			continue
 		}
 		createdSubtasks = append(createdSubtasks, newSubtask)
+		subtaskIDs = append(subtaskIDs, newSubtask.ID)
+	}
+
+	// Also update original task to depend on these new subtasks
+	if len(subtaskIDs) > 0 {
+		updates := map[string]interface{}{
+			"depends_on": append(task.DependsOn, subtaskIDs...),
+		}
+		_ = services.UpdateTask(userID.(primitive.ObjectID), task.ID, updates)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
