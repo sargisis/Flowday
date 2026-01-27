@@ -103,7 +103,7 @@ func (h *Hub) run() {
 				}
 			}
 			h.mu.RUnlock()
-			
+
 			// Remove clients with closed channels outside the read lock
 			if len(clientsToRemove) > 0 {
 				h.mu.Lock()
@@ -325,6 +325,32 @@ func BroadcastTaskDelete(userIDs []primitive.ObjectID, taskID string) {
 				delete(hub.clients, userID)
 				hub.mu.Unlock()
 			}
+		}
+	}
+}
+
+func BroadcastUserUpdate(userID primitive.ObjectID, updateData map[string]interface{}) {
+	if hub == nil {
+		return
+	}
+
+	message := Message{
+		Type:    "user_update",
+		Payload: updateData,
+	}
+
+	hub.mu.RLock()
+	client, exists := hub.clients[userID]
+	hub.mu.RUnlock()
+
+	if exists {
+		select {
+		case client.send <- message:
+		default:
+			client.safeCloseSend()
+			hub.mu.Lock()
+			delete(hub.clients, userID)
+			hub.mu.Unlock()
 		}
 	}
 }

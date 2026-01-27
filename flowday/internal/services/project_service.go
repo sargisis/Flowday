@@ -9,10 +9,12 @@ import (
 	"flowday/internal/cache"
 	"flowday/internal/db"
 	"flowday/internal/dto"
+	appErrors "flowday/internal/errors"
 	"flowday/internal/models"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func CreateProject(userID primitive.ObjectID, name string) (*models.Project, error) {
@@ -24,7 +26,27 @@ func CreateProject(userID primitive.ObjectID, name string) (*models.Project, err
 	}
 
 	ctx := context.Background()
-	_, err := db.Projects.InsertOne(ctx, project)
+
+	// Check user plan limits
+	var user models.User
+	err := db.Users.FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
+	if err != nil {
+		return nil, err
+	}
+
+	if user.Plan != "pro" {
+		count, err := db.Projects.CountDocuments(ctx, bson.M{"user_id": userID})
+		if err != nil {
+			return nil, err
+		}
+		if count >= 3 {
+			// Using errors.New directly as we don't return specific error types for limits yet
+			// Ideally should use a custom error type like appErrors.ErrPlanLimitReached
+			return nil, appErrors.NewAppError(appErrors.CodeForbidden, "Free plan limit reached: Max 3 projects. Please upgrade to Pro.")
+		}
+	}
+
+	_, err = db.Projects.InsertOne(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -165,4 +187,40 @@ func DeleteProject(userID, projectID primitive.ObjectID) error {
 		"user_id": userID,
 	})
 	return err
+}
+
+func UpdateProject(userID, projectID primitive.ObjectID, name string) (*models.Project, error) {
+	ctx := context.Background()
+
+	// Verify ownership or permission (for now, strictly ownership/membership check handled by query)
+	// Update the project name
+	update := bson.M{
+		"$set": bson.M{
+			"name":       name,
+			"updated_at": time.Now(),
+		},
+	}
+
+	// Only allow update if user is the owner (user_id matches)
+	// TODO: Allow admins/managers to update if we add roles later
+	result := db.Projects.FindOneAndUpdate(
+		ctx,
+		bson.M{"_id": projectID, "user_id": userID},
+		update,
+		options.FindOneAndUpdate().SetReturnDocument(options.After),
+	)
+
+	if result.Err() != nil {
+		return nil, result.Err()
+	}
+
+	var project models.Project
+	if err := result.Decode(&project); err != nil {
+		return nil, err
+	}
+
+	// Invalidate cache
+	cache.Delete("projects:" + userID.Hex())
+
+	return &project, nil
 }

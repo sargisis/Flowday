@@ -73,6 +73,9 @@ func Setup(r *gin.Engine) {
 	// Public Slack Interactivity endpoint (no auth required - Slack sends requests directly)
 	v1.POST("/slack/interactivity", handlers.HandleSlackInteractivity)
 
+	// ✅ WEBHOOKS: Buy Me a Coffee (Public, verified by secret inside handler)
+	v1.POST("/webhooks/bmac", handlers.HandleBMACWebhook)
+
 	// ✅ FILES: Serve uploaded files
 	// Public access for avatars (simpler - no auth needed)
 	v1.GET("/uploads/*filepath", handlers.ServePublicFile)
@@ -89,6 +92,7 @@ func Setup(r *gin.Engine) {
 	{
 		projectsGroup.GET("", handlers.GetProjects)
 		projectsGroup.POST("", handlers.CreateProject)
+		projectsGroup.PATCH("/:id", handlers.UpdateProject)
 		projectsGroup.DELETE("/:id", handlers.DeleteProject)
 	}
 

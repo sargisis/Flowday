@@ -66,3 +66,28 @@ func DeleteProject(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+
+func UpdateProject(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	projectID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project id format"})
+		return
+	}
+
+	var req struct {
+		Name string `json:"name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	project, err := services.UpdateProject(userID.(primitive.ObjectID), projectID, req.Name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, project)
+}
