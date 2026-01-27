@@ -36,6 +36,7 @@
 - ✅ **Email templates** - Beautiful, responsive HTML email templates
 - ✅ **Circuit breaker** - Protection against cascading failures (ready for external services)
 - ✅ **API documentation** - Swagger/OpenAPI documentation (ready)
+- ✅ **Subscriptions** - Webhook integration with Buy Me a Coffee (Pro memberships)
 
 ## 📋 Requirements
 
@@ -103,6 +104,9 @@ SLACK_REDIRECT_URI=https://your-domain.com/api/v1/slack/oauth/callback
 
 # AI Service (Groq)
 GROQ_API_KEY=your-groq-api-key
+
+# Subscriptions (Buy Me a Coffee)
+BMAC_WEBHOOK_SECRET=your-bmac-secret-key
 ```
 
 ## 🏃 Running the Server
@@ -169,6 +173,10 @@ The server will start on `http://localhost:8080`
 - `POST /api/v1/ai/health-advice` - Get health advice
 - `GET /api/v1/ai/quota` - Get AI quota
 - `GET /api/v1/ai/insights` - Get AI insights
+
+### Webhooks
+
+- `POST /api/v1/webhooks/bmac` - Buy Me a Coffee webhook (Subscription upgrades)
 
 See `/docs/swagger.yaml` for complete API documentation.
 
