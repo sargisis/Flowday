@@ -11,6 +11,7 @@
 - ✅ **Caching** - In-memory cache with Redis support ready
 - ✅ **Request timeouts** - Configurable timeouts to prevent hanging requests
 
+
 ### Stability
 - ✅ **Graceful shutdown** - Clean shutdown with 30s timeout
 - ✅ **Health checks** - `/health`, `/ready`, `/live` endpoints
